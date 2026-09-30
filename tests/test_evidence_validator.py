@@ -13,7 +13,9 @@ def test_evidence_validator_drops_hallucinations():
         real_file_full = os.path.join(tmpdir, real_file_rel)
         os.makedirs(os.path.dirname(real_file_full), exist_ok=True)
         with open(real_file_full, "w") as f:
-            f.write("def login(user, password):\n    if not user:\n        raise ValueError()\n    return True\n")
+            f.write(
+                "def login(user, password):\n    if not user:\n        raise ValueError()\n    return True\n"
+            )
 
         raw_findings = [
             # 1. Legitimate finding on existing line

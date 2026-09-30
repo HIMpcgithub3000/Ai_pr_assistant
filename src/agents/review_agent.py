@@ -1,6 +1,6 @@
 from typing import Any
 
-from src.agents.state import AnalysisGraphState
+from .state import AnalysisGraphState
 
 
 class ReviewAgents:
@@ -27,7 +27,8 @@ class ReviewAgents:
                 and "except:" in line
                 and "Exception" not in line
             ):
-                findings.append({
+                findings.append(
+                    {
                         "file_path": changed_files[0] if changed_files else "unknown",
                         "line_number": line_no,
                         "category": "BUG",
@@ -35,7 +36,8 @@ class ReviewAgents:
                         "title": "Bare except clause detected",
                         "description": "Bare except catches system exit and keyboard interrupts. Catch specific exceptions.",
                         "suggestion": "Replace with 'except Exception as e:'",
-                    })
+                    }
+                )
 
         return {"bug_findings": findings}
 
@@ -48,15 +50,22 @@ class ReviewAgents:
         # Convert high severity static findings into formal security review findings
         for sf in static:
             if sf.get("severity") in ("CRITICAL", "HIGH"):
-                findings.append({
-                    "file_path": sf.get("file_path", state.get("changed_files", ["unknown"])[0] if state.get("changed_files") else "unknown"),
-                    "line_number": sf.get("line_number", 1),
-                    "category": "SECURITY",
-                    "severity": sf.get("severity", "HIGH"),
-                    "title": sf.get("message", "Security Alert"),
-                    "description": f"Security vulnerability flagged: {sf.get('message')}",
-                    "suggestion": "Sanitize inputs and ensure secret tokens are loaded via environment variables.",
-                })
+                findings.append(
+                    {
+                        "file_path": sf.get(
+                            "file_path",
+                            state.get("changed_files", ["unknown"])[0]
+                            if state.get("changed_files")
+                            else "unknown",
+                        ),
+                        "line_number": sf.get("line_number", 1),
+                        "category": "SECURITY",
+                        "severity": sf.get("severity", "HIGH"),
+                        "title": sf.get("message", "Security Alert"),
+                        "description": f"Security vulnerability flagged: {sf.get('message')}",
+                        "suggestion": "Sanitize inputs and ensure secret tokens are loaded via environment variables.",
+                    }
+                )
 
         return {"security_findings": findings}
 
@@ -69,14 +78,16 @@ class ReviewAgents:
 
         for line_no, line in enumerate(diff.splitlines(), start=1):
             if line.startswith("+") and "TODO" in line:
-                findings.append({
-                    "file_path": changed_files[0] if changed_files else "unknown",
-                    "line_number": line_no,
-                    "category": "QUALITY",
-                    "severity": "LOW",
-                    "title": "Unresolved TODO detected",
-                    "description": "Unresolved TODO committed in new code.",
-                    "suggestion": "Resolve before merge or track in issue tracker.",
-                })
+                findings.append(
+                    {
+                        "file_path": changed_files[0] if changed_files else "unknown",
+                        "line_number": line_no,
+                        "category": "QUALITY",
+                        "severity": "LOW",
+                        "title": "Unresolved TODO detected",
+                        "description": "Unresolved TODO committed in new code.",
+                        "suggestion": "Resolve before merge or track in issue tracker.",
+                    }
+                )
 
         return {"quality_findings": findings}

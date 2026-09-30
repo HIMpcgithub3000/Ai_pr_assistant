@@ -59,7 +59,7 @@ async def health_check():
             "postgres": "ready",
             "redis": "ready",
             "otel": settings.OTEL_EXPORTER_OTLP_ENDPOINT,
-        }
+        },
     }
 
 
@@ -67,12 +67,15 @@ def verify_github_signature(payload: bytes, signature_header: str | None) -> boo
     if not settings.GITHUB_WEBHOOK_SECRET or not signature_header:
         # Development fallback if secret not set
         return True
-    
-    expected = "sha256=" + hmac.new(
-        settings.GITHUB_WEBHOOK_SECRET.encode("utf-8"),
-        payload,
-        hashlib.sha256,
-    ).hexdigest()
+
+    expected = (
+        "sha256="
+        + hmac.new(
+            settings.GITHUB_WEBHOOK_SECRET.encode("utf-8"),
+            payload,
+            hashlib.sha256,
+        ).hexdigest()
+    )
     return hmac.compare_digest(expected, signature_header)
 
 
@@ -111,7 +114,7 @@ async def github_webhook_endpoint(
     if x_github_event == "pull_request" or "pull_request" in payload:
         pr_data = payload.get("pull_request", {})
         action = payload.get("action", "")
-        
+
         # Only analyze on opened, synchronize, or reopened
         if action in ("opened", "synchronize", "reopened", ""):
             repo_id = payload.get("repository", {}).get("full_name", "test-org/test-repo")
@@ -203,8 +206,12 @@ async def get_run_details(
     if not run:
         raise HTTPException(status_code=404, detail="Analysis run not found")
 
-    findings_res = await db.execute(select(AnalysisFinding).where(AnalysisFinding.analysis_id == analysis_id))
-    evidence_res = await db.execute(select(TestEvidence).where(TestEvidence.analysis_id == analysis_id))
+    findings_res = await db.execute(
+        select(AnalysisFinding).where(AnalysisFinding.analysis_id == analysis_id)
+    )
+    evidence_res = await db.execute(
+        select(TestEvidence).where(TestEvidence.analysis_id == analysis_id)
+    )
 
     return {
         "id": run.id,

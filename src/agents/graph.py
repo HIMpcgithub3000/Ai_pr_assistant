@@ -2,9 +2,9 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
-from src.agents.review_agent import ReviewAgents
-from src.agents.state import AnalysisGraphState
-from src.agents.test_agent import TestGenerationAgent
+from .review_agent import ReviewAgents
+from .state import AnalysisGraphState
+from .test_agent import TestGenerationAgent
 
 
 def aggregate_results_node(state: AnalysisGraphState) -> dict[str, Any]:

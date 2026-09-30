@@ -67,7 +67,10 @@ class PRAnalysisProcessor:
                 changed_files = checkout_info["changed_files"]
             else:
                 # Simulated / sample test diff if clone url not provided in mock test
-                code_diff = job_data.get("sample_diff", "diff --git a/app.py b/app.py\n+def add(a, b):\n+    return a + b\n")
+                code_diff = job_data.get(
+                    "sample_diff",
+                    "diff --git a/app.py b/app.py\n+def add(a, b):\n+    return a + b\n",
+                )
                 changed_files = job_data.get("changed_files", ["app.py"])
                 # Create a sample file for evidence validation in target_dir
                 sample_file = os.path.join(target_dir, changed_files[0])
@@ -189,7 +192,9 @@ class PRAnalysisProcessor:
                 repo_owner_name=repo_id,
                 head_sha=head_sha,
                 status="completed",
-                conclusion="success" if not any(f.get("severity") in ("CRITICAL", "HIGH") for f in validated_findings) else "neutral",
+                conclusion="success"
+                if not any(f.get("severity") in ("CRITICAL", "HIGH") for f in validated_findings)
+                else "neutral",
                 title="AI PR Assistant Analysis Complete",
                 summary=summary_markdown,
             )

@@ -1,4 +1,3 @@
-
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,4 +42,7 @@ class FreshnessChecker:
         await db.execute(stmt)
         await db.commit()
 
-        return False, f"STALE RUN: PR HEAD advanced from {locked_head_sha[:7]} to {live_head_sha[:7]}. Analysis discarded."
+        return (
+            False,
+            f"STALE RUN: PR HEAD advanced from {locked_head_sha[:7]} to {live_head_sha[:7]}. Analysis discarded.",
+        )

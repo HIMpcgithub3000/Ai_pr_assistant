@@ -1,6 +1,6 @@
 from typing import Any
 
-from src.agents.state import AnalysisGraphState
+from .state import AnalysisGraphState
 
 
 class TestGenerationAgent:

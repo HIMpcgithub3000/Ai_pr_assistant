@@ -74,7 +74,11 @@ class GitHubClient:
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(url, headers=headers, json=payload, timeout=10.0)
-            return resp.json() if resp.status_code in (200, 201) else {"status": "error", "code": resp.status_code}
+            return (
+                resp.json()
+                if resp.status_code in (200, 201)
+                else {"status": "error", "code": resp.status_code}
+            )
 
     def format_pr_comment(
         self,
@@ -104,7 +108,9 @@ class GitHubClient:
                 comment.append(f"  - **Details**: {f.get('description')}")
                 if f.get("suggestion"):
                     comment.append(f"  - **Suggestion**: {f.get('suggestion')}")
-                comment.append(f"  - *Verification*: Confidence {int(f.get('confidence', 0.9) * 100)}% ({f.get('proof_reason', 'Verified')})")
+                comment.append(
+                    f"  - *Verification*: Confidence {int(f.get('confidence', 0.9) * 100)}% ({f.get('proof_reason', 'Verified')})"
+                )
             comment.append("")
 
         if test_evidence:
@@ -115,5 +121,7 @@ class GitHubClient:
             if test_evidence.get("stdout"):
                 comment.append(f"```text\n{test_evidence.get('stdout').strip()[:500]}\n```")
 
-        comment.append("\n---\n*Verified by deterministic sandbox execution and physical evidence check.*")
+        comment.append(
+            "\n---\n*Verified by deterministic sandbox execution and physical evidence check.*"
+        )
         return "\n".join(comment)

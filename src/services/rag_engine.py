@@ -38,11 +38,15 @@ class RAGEngine:
         If cache hit, skips generating a new vector!
         """
         # Look for existing chunk with same content in this repo
-        stmt = select(CodeEmbedding).where(
-            CodeEmbedding.repository_id == repository_id,
-            CodeEmbedding.file_path == file_path,
-            CodeEmbedding.chunk_content == content,
-        ).limit(1)
+        stmt = (
+            select(CodeEmbedding)
+            .where(
+                CodeEmbedding.repository_id == repository_id,
+                CodeEmbedding.file_path == file_path,
+                CodeEmbedding.chunk_content == content,
+            )
+            .limit(1)
+        )
         res = await db.execute(stmt)
         existing = res.scalar_one_or_none()
 
@@ -88,7 +92,9 @@ class RAGEngine:
         """)
 
         try:
-            res = await db.execute(raw_sql, {"repo_id": repository_id, "query_vec": vec_literal, "lim": limit})
+            res = await db.execute(
+                raw_sql, {"repo_id": repository_id, "query_vec": vec_literal, "lim": limit}
+            )
             rows = res.fetchall()
             return [
                 {
@@ -101,9 +107,18 @@ class RAGEngine:
             ]
         except Exception:
             # Fallback if vector index is empty or building
-            stmt = select(CodeEmbedding).where(CodeEmbedding.repository_id == repository_id).limit(limit)
+            stmt = (
+                select(CodeEmbedding)
+                .where(CodeEmbedding.repository_id == repository_id)
+                .limit(limit)
+            )
             fallback_res = await db.execute(stmt)
             return [
-                {"file_path": item.file_path, "symbol_context": item.symbol_context, "content": item.chunk_content, "relevance_score": 0.8}
+                {
+                    "file_path": item.file_path,
+                    "symbol_context": item.symbol_context,
+                    "content": item.chunk_content,
+                    "relevance_score": 0.8,
+                }
                 for item in fallback_res.scalars().all()
             ]

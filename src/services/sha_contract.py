@@ -72,9 +72,7 @@ class SHAContractService:
         await r.set(redis_key, json.dumps(contract_data))
         return run
 
-    async def get_active_contract(
-        self, repository_id: str, pr_number: int
-    ) -> SHAContract | None:
+    async def get_active_contract(self, repository_id: str, pr_number: int) -> SHAContract | None:
         r = await self.get_redis()
         redis_key = f"sha_contract:{repository_id}:{pr_number}"
         data = await r.get(redis_key)

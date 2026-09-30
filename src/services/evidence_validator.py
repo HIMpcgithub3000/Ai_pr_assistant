@@ -26,7 +26,11 @@ class EvidenceValidator:
         """
         full_path = os.path.join(checkout_dir, file_path)
         if not os.path.exists(full_path):
-            return False, 0.0, f"HALLUCINATION: File '{file_path}' does not physically exist in repo."
+            return (
+                False,
+                0.0,
+                f"HALLUCINATION: File '{file_path}' does not physically exist in repo.",
+            )
 
         if not os.path.isfile(full_path):
             return False, 0.0, f"HALLUCINATION: '{file_path}' is not a regular file."
@@ -37,7 +41,11 @@ class EvidenceValidator:
         total_lines = len(lines)
         if line_number is not None:
             if line_number < 1 or line_number > total_lines:
-                return False, 0.1, f"HALLUCINATION: Line {line_number} is out of bounds (file has {total_lines} lines)."
+                return (
+                    False,
+                    0.1,
+                    f"HALLUCINATION: Line {line_number} is out of bounds (file has {total_lines} lines).",
+                )
 
             target_line = lines[line_number - 1]
             if symbol_name and symbol_name not in target_line:
@@ -46,11 +54,19 @@ class EvidenceValidator:
                 end_w = min(total_lines, line_number + 3)
                 window = "".join(lines[start_w:end_w])
                 if symbol_name not in window:
-                    return False, 0.3, f"UNVERIFIED: Symbol '{symbol_name}' not found near line {line_number}."
+                    return (
+                        False,
+                        0.3,
+                        f"UNVERIFIED: Symbol '{symbol_name}' not found near line {line_number}.",
+                    )
 
         # High confidence proof: file exists and line range matches
         confidence = 0.95 if line_number is not None else 0.85
-        return True, confidence, "VERIFIED: Physical file and line coordinates verified against checkout."
+        return (
+            True,
+            confidence,
+            "VERIFIED: Physical file and line coordinates verified against checkout.",
+        )
 
     def filter_and_validate(
         self,

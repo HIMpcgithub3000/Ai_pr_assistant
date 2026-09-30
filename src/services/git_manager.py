@@ -29,7 +29,11 @@ class GitManager:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        return proc.returncode, stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace")
+        return (
+            proc.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
 
     async def ensure_cached_repo(self, repo_id: str, clone_url: str) -> str:
         repo_path = self._get_repo_cache_path(repo_id)

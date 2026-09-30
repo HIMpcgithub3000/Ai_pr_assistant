@@ -15,7 +15,9 @@ class DockerTestSandbox:
     can claim a test passed without real stdout/stderr execution proof.
     """
 
-    def __init__(self, image: str = settings.SANDBOX_IMAGE, timeout: int = settings.SANDBOX_TIMEOUT_SECONDS):
+    def __init__(
+        self, image: str = settings.SANDBOX_IMAGE, timeout: int = settings.SANDBOX_TIMEOUT_SECONDS
+    ):
         self.image = image
         self.timeout = timeout
         try:
@@ -43,6 +45,7 @@ class DockerTestSandbox:
         if self.docker_client:
             try:
                 loop = asyncio.get_running_loop()
+
                 def _run_in_docker():
                     container = self.docker_client.containers.run(
                         self.image,
@@ -61,7 +64,7 @@ class DockerTestSandbox:
                     loop.run_in_executor(None, _run_in_docker),
                     timeout=self.timeout,
                 )
-                passed = (exit_code == 0)
+                passed = exit_code == 0
                 if passed:
                     return {
                         "test_name": test_name,
@@ -76,7 +79,16 @@ class DockerTestSandbox:
                 pass
 
         # Method B: Subprocess execution in virtualenv sandbox
-        cmd = [sys.executable, "-m", "pytest", "-o", "cache_dir=/tmp/.pytest_cache", test_name, "-v", "--tb=short"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-o",
+            "cache_dir=/tmp/.pytest_cache",
+            test_name,
+            "-v",
+            "--tb=short",
+        ]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -90,7 +102,7 @@ class DockerTestSandbox:
             stdout = stdout_bytes.decode("utf-8", errors="replace")
             stderr = stderr_bytes.decode("utf-8", errors="replace")
             exit_code = proc.returncode or 0
-            passed = (exit_code == 0)
+            passed = exit_code == 0
 
             return {
                 "test_name": test_name,
