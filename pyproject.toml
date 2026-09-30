@@ -1,0 +1,48 @@
+[project]
+name = "ai-pr-assistant"
+version = "0.1.0"
+description = "Production-grade AI-Powered PR Assistant with SHA contracts, priority queues, and sandbox test verification"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.31.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "sqlalchemy[asyncio]>=2.0.35",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "pgvector>=0.3.5",
+    "redis>=5.1.0",
+    "rq>=1.16.2",
+    "httpx>=0.27.2",
+    "pyjwt[crypto]>=2.9.0",
+    "cryptography>=43.0.1",
+    "langchain>=0.3.0",
+    "langgraph>=0.2.20",
+    "langchain-core>=0.3.0",
+    "docker>=7.1.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-exporter-otlp>=1.27.0",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.6.8",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["B008", "ASYNC230", "BLE001", "RUF012", "S110"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
