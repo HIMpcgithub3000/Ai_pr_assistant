@@ -35,12 +35,18 @@ class GitManager:
             stderr.decode("utf-8", errors="replace"),
         )
 
+    def _format_authenticated_url(self, clone_url: str) -> str:
+        if settings.GITHUB_TOKEN and "github.com/" in clone_url and "@" not in clone_url:
+            return clone_url.replace("https://github.com/", f"https://x-access-token:{settings.GITHUB_TOKEN}@github.com/")
+        return clone_url
+
     async def ensure_cached_repo(self, repo_id: str, clone_url: str) -> str:
         repo_path = self._get_repo_cache_path(repo_id)
+        auth_url = self._format_authenticated_url(clone_url)
         if not os.path.exists(repo_path):
             # Create a mirror/bare cache or initial clone
             os.makedirs(repo_path, exist_ok=True)
-            cmd = ["git", "clone", "--bare", clone_url, repo_path]
+            cmd = ["git", "clone", "--bare", auth_url, repo_path]
             code, _out, err = await self._run_command(cmd, cwd=self.cache_dir)
             if code != 0:
                 # If local or mock repo URL
@@ -63,18 +69,24 @@ class GitManager:
         Creates an isolated analysis checkout locked strictly to head_sha and base_sha.
         Generates deterministic diff between base_sha and head_sha.
         """
+        target_dir = os.path.abspath(target_dir)
         os.makedirs(target_dir, exist_ok=True)
         repo_cache = await self.ensure_cached_repo(repo_id, clone_url)
 
-        # Fetch the head commit into the cache
-        fetch_cmd = ["git", "fetch", clone_url, f"{head_sha}"]
-        await self._run_command(fetch_cmd, cwd=repo_cache)
+        # Fetch head_sha and base_sha explicitly into cache with named refs
+        auth_url = self._format_authenticated_url(clone_url)
+        await self._run_command(["git", "fetch", auth_url, f"+{head_sha}:refs/commits/{head_sha}"], cwd=repo_cache)
+        await self._run_command(["git", "fetch", auth_url, f"+{base_sha}:refs/commits/{base_sha}"], cwd=repo_cache)
 
         # Clone from local cache into target checkout directory
         clone_cmd = ["git", "clone", repo_cache, target_dir]
         code, _, err = await self._run_command(clone_cmd, cwd=self.cache_dir)
         if code != 0:
             raise RuntimeError(f"Failed to clone from cache: {err}")
+
+        # Fetch the refs from local cache into target_dir
+        await self._run_command(["git", "fetch", "origin", f"refs/commits/{head_sha}:refs/commits/{head_sha}"], cwd=target_dir)
+        await self._run_command(["git", "fetch", "origin", f"refs/commits/{base_sha}:refs/commits/{base_sha}"], cwd=target_dir)
 
         # Checkout exact HEAD SHA
         checkout_cmd = ["git", "checkout", head_sha]

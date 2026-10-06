@@ -199,6 +199,13 @@ class PRAnalysisProcessor:
                 summary=summary_markdown,
             )
 
+            # Post markdown review summary comment directly to the PR conversation
+            await self.github_client.post_pr_comment(
+                repo_owner_name=repo_id,
+                pr_number=pr_number,
+                body=summary_markdown,
+            )
+
             # 10. Mark Analysis Run COMPLETED
             await db.execute(
                 update(AnalysisRun)

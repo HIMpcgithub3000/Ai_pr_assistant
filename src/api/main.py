@@ -91,7 +91,10 @@ async def github_webhook_endpoint(
     if not verify_github_signature(body, x_hub_signature_256):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    payload = await request.json()
+    try:
+        payload = await request.json() if body else {}
+    except Exception:
+        payload = {}
     delivery_id = x_github_delivery or "manual-" + hashlib.sha256(body).hexdigest()[:12]
 
     # Idempotency check: ensure same delivery isn't processed twice

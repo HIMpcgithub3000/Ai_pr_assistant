@@ -80,6 +80,25 @@ class GitHubClient:
                 else {"status": "error", "code": resp.status_code}
             )
 
+    async def post_pr_comment(
+        self,
+        repo_owner_name: str,
+        pr_number: int,
+        body: str,
+    ) -> dict[str, Any]:
+        """Posts a formatted markdown review comment directly to the Pull Request conversation."""
+        if not self.token and not self.app_id:
+            return {"status": "mocked"}
+        headers = await self.get_headers()
+        url = f"https://api.github.com/repos/{repo_owner_name}/issues/{pr_number}/comments"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json={"body": body}, timeout=10.0)
+            return (
+                resp.json()
+                if resp.status_code in (200, 201)
+                else {"status": "error", "code": resp.status_code}
+            )
+
     def format_pr_comment(
         self,
         analysis_id: str,

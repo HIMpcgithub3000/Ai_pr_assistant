@@ -1,0 +1,187 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "pr-assistant-control-tower",
+    "title": "AI PR Assistant — Mission Control",
+    "tags": ["ai", "devops", "pr-assistant", "prometheus"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "type": "stat",
+        "title": "Collector & Prometheus Status",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "up{job=\"otel-collector\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "1": { "text": "HEALTHY", "color": "green" },
+                  "0": { "text": "DOWN", "color": "red" }
+                }
+              }
+            ],
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "green", "value": 1 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "type": "stat",
+        "title": "Telemetry Scrape Latency",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "scrape_duration_seconds{job=\"otel-collector\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.05 },
+                { "color": "red", "value": 0.2 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "type": "stat",
+        "title": "Telemetry Samples / Scrape",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "scrape_samples_scraped{job=\"otel-collector\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "palette-classic" }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "type": "stat",
+        "title": "Active Target Endpoints",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "count(up == 1)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": { "mode": "thresholds" },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "type": "timeseries",
+        "title": "Collector Scrape Duration (Time Series)",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "scrape_duration_seconds{job=\"otel-collector\"}",
+            "legendFormat": "Scrape Latency",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 15
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "type": "timeseries",
+        "title": "Telemetry Samples Scraped (Rate)",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "rate(scrape_samples_scraped{job=\"otel-collector\"}[1m])",
+            "legendFormat": "Samples/sec",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "drawStyle": "bars",
+              "fillOpacity": 40
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+        "type": "table",
+        "title": "Prometheus Scraping Targets & Health",
+        "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+        "targets": [
+          {
+            "datasource": { "type": "prometheus", "uid": "eg0f5wexzvtvke" },
+            "expr": "up",
+            "format": "table",
+            "instant": true,
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
