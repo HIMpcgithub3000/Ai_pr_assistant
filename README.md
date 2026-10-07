@@ -64,51 +64,51 @@ flowchart TD
 
     %% 1. Ingestion
     subgraph INGESTION["1. Webhook Ingestion & Ingress"]
-        GH["GitHub PR Event<br/>(Opened / Synchronize)"] -->|POST Webhook| API["FastAPI Gateway (:8000)"]
-        API -->|HMAC SHA-256 Verification| IDEM["Idempotency Filter<br/>(Delivery ID Deduplication)"]
+        GH["GitHub PR Event<br/>Opened or Synchronize"] -->|"POST Webhook"| API["FastAPI Gateway :8000"]
+        API -->|"HMAC SHA-256 Check"| IDEM["Idempotency Filter<br/>Delivery ID Deduplication"]
     end
     class GH,API,IDEM intake;
 
     %% 2. SHA Contract & Queue
     subgraph CONTRACT_QUEUE["2. SHA Contract & Priority Queue"]
-        IDEM -->|Lock HEAD_SHA + BASE_SHA| SHA["SHA Contract Issuer<br/>(Analysis UUID)"]
-        SHA -->|Persist Snapshot| DB[("PostgreSQL 16 + Redis 7")]
-        SHA -->|Enqueue by Priority| PQ{"Redis Priority Queue<br/>(P0 > P1 > P2 > P3)"}
+        IDEM -->|"Lock HEAD_SHA + BASE_SHA"| SHA["SHA Contract Issuer<br/>Analysis UUID"]
+        SHA -->|"Persist Snapshot"| DB[("PostgreSQL 16 + Redis 7")]
+        SHA -->|"Enqueue by Priority"| PQ{"Redis Priority Queue<br/>P0 > P1 > P2 > P3"}
     end
     class SHA,DB,PQ contract;
 
     %% 3. Worker & Context Preparation
     subgraph WORKER_STAGE["3. Worker & Repository Context"]
-        PQ -->|Dequeue Job| WRK["PR Analysis Worker Daemon"]
-        WRK -->|Authenticated Fetch| GIT["Shared Bare Git Cache<br/>(Named Commit Refs)"]
-        GIT --> SA["Parallel Static Analysis<br/>(Ruff Lint, Bandit SAST, Secrets)"]
-        GIT --> RAG["pgvector RAG Engine<br/>(Code Chunk Retrieval)"]
+        PQ -->|"Dequeue Job"| WRK["PR Analysis Worker Daemon"]
+        WRK -->|"Authenticated Fetch"| GIT["Shared Bare Git Cache<br/>Named Commit Refs"]
+        GIT --> SA["Parallel Static Analysis<br/>Ruff Lint, Bandit SAST, Secrets"]
+        GIT --> RAG["pgvector RAG Engine<br/>Code Chunk Retrieval"]
     end
     class WRK,GIT,SA,RAG worker;
 
     %% 4. AI Orchestration
     subgraph LANGGRAPH["4. LangGraph Multi-Agent Orchestration"]
         SA & RAG --> AGENTS["LangGraph State Machine"]
-        AGENTS --> REV["Review Agents<br/>(Bug, Security, Quality)"]
-        AGENTS --> TST["Test Generation Agent<br/>(Diff-Targeted Tests)"]
+        AGENTS --> REV["Review Agents<br/>Bug, Security, Quality"]
+        AGENTS --> TST["Test Generation Agent<br/>Diff-Targeted Tests"]
     end
     class AGENTS,REV,TST ai;
 
     %% 5. Verification & Gates
     subgraph GATES["5. Trust Verification & Execution Gates"]
-        TST --> SBX["Isolated Docker Sandbox<br/>(pytest Execution -> stdout/stderr)"]
-        REV --> EV["Physical Evidence Validator<br/>(File / Line / AST Check)"]
-        EV -.->|Ungrounded Findings| DROP["Drop Hallucinations ❌"]
+        TST --> SBX["Isolated Docker Sandbox<br/>pytest Execution to stdout/stderr"]
+        REV --> EV["Physical Evidence Validator<br/>File / Line / AST Check"]
+        EV -.->|"Ungrounded Findings"| DROP["Drop Hallucinations ❌"]
         
-        SBX & EV --> FRESH{"Freshness Check Gate<br/>(Live GitHub HEAD SHA Compare)"}
+        SBX & EV --> FRESH{"Freshness Check Gate<br/>Live GitHub HEAD Compare"}
     end
     class SBX,EV,DROP,FRESH gate;
 
     %% 6. Publishing
     subgraph PUBLISH["6. Publishing & Telemetry"]
-        FRESH -->|STALE (Superseded)| SALVAGE["Mark STALE & Salvage Cache ♻️"]
-        FRESH -->|FRESH (SHA Match)| PUB["GitHub PR Comment & Checks API"]
-        PUB --> OBS["OpenTelemetry Collector (:4317)<br/>Prometheus (:9090) & Grafana (:3000)"]
+        FRESH -->|"STALE - Superseded"| SALVAGE["Mark STALE and Salvage Cache ♻️"]
+        FRESH -->|"FRESH - SHA Match"| PUB["GitHub PR Comment & Checks API"]
+        PUB --> OBS["OpenTelemetry Collector :4317<br/>Prometheus :9090 & Grafana :3000"]
     end
     class SALVAGE,PUB,OBS output;
 ```
