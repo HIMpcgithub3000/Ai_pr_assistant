@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from enum import Enum
 from typing import Any, Callable
 
@@ -80,7 +81,7 @@ class AgentCircuitBreaker:
         self, fallback_func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Any:
         """Executes fallback logic (e.g. degraded mode with static-analysis only)."""
-        if asyncio.iscoroutinefunction(fallback_func):
+        if inspect.iscoroutinefunction(fallback_func):
             return await fallback_func(*args, **kwargs)
         return fallback_func(*args, **kwargs)
 

@@ -97,6 +97,7 @@ async def test_salvage_gate_unchanged_file_calculation():
             line_number=12,
             symbol_name="verify_token",
             title="Valid finding",
+            description="Detected potential token expiration issue",
             category="SECURITY",
             severity="HIGH",
             verified=True,
