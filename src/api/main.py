@@ -12,6 +12,8 @@ from src.config import settings
 from src.db.models import AnalysisFinding, AnalysisRun, TestEvidence, WebhookEvent
 from src.db.session import get_db_session, init_db
 from src.services.sha_contract import SHAContractService
+from src.worker.capacity import CapacityManager
+from src.worker.kafka_queue import MultiTopicQueueAdapter
 from src.worker.processor import PRAnalysisProcessor
 from src.worker.queue import PriorityQueueManager
 
@@ -35,6 +37,8 @@ FastAPIInstrumentor.instrument_app(app)
 
 sha_service = SHAContractService()
 queue_manager = PriorityQueueManager()
+topic_adapter = MultiTopicQueueAdapter()
+capacity_mgr = CapacityManager()
 processor = PRAnalysisProcessor()
 
 
@@ -60,6 +64,23 @@ async def health_check():
             "redis": "ready",
             "otel": settings.OTEL_EXPORTER_OTLP_ENDPOINT,
         },
+    }
+
+
+@app.get("/api/v1/queues")
+async def get_live_queues():
+    """Live queue & topic monitoring endpoint for priority partitions and worker headroom."""
+    topic_depths = await topic_adapter.get_topic_depths()
+    queue_metrics = await queue_manager.get_queue_metrics()
+    active_workers = await capacity_mgr.get_active_workers_count()
+    headroom = await capacity_mgr.get_headroom()
+    return {
+        "status": "active",
+        "broker": "Multi-Topic Partitioning Queue (Kafka Model on Redis)",
+        "priority_topics": topic_depths,
+        "priority_queues": queue_metrics,
+        "cluster_headroom": headroom,
+        "active_workers": active_workers,
     }
 
 
