@@ -1,8 +1,8 @@
 # AI-Powered PR Assistant — Setup & Deployment Guide
 
 > **Tested & Validated Local & AWS Cloud Setup Guide**  
-> Branch: `phase-1`  
-> Status: **Phase 1 Implementation Complete & 100% Tested**
+> Branch: `phase-2`  
+> Status: **Stage 2 (Distributed Scaling & Performance) Implementation Active & Verified**
 
 ---
 
@@ -11,33 +11,23 @@
 | Environment | OS / Specs | Runtimes & Services |
 |:---|:---|:---|
 | **Local Development** | macOS (Apple Silicon / Intel) | Docker Desktop / OrbStack, Python 3.11+, Git |
-| **AWS Cloud** | Ubuntu 22.04 / 24.04 LTS (EC2) | Docker Engine + Compose plugin, Python 3.11+, Git |
+| **AWS Cloud** | Ubuntu 22.04 / 24.04 LTS (EC2: `65.1.2.250`) | Docker Engine + Compose plugin, Python 3.11+, Git |
 
 ---
 
-## 2. Phase 1 Implementation Tracker (All 21 Steps Complete)
+## 2. Phase Implementation Trackers
 
-- [x] **Step 1: AWS / Ubuntu & Local Environment Prerequisites** (Docker, Git, Python 3.11+)
-- [x] **Step 2: Project Repository Structure** (`pyproject.toml`, `ruff`, modular `src/` & `tests/`)
-- [x] **Step 3: Docker + Compose Base Services** (Postgres + pgvector, Redis, OpenTelemetry Collector, Prometheus, Grafana)
-- [x] **Step 4: PostgreSQL Database Schema** (`AnalysisRun`, `WebhookEvent`, `AnalysisFinding`, `TestEvidence`, `CodeEmbedding`)
-- [x] **Step 5: Redis Broker & Queues** (Hot-state SHA contracts, capacity management)
-- [x] **Step 6: FastAPI Gateway Service** (`/health`, `/webhook/github`, `/api/v1/trigger`, `/api/v1/runs/{id}`)
-- [x] **Step 7: GitHub App + Webhook Integration** (HMAC-SHA256 signature verification, idempotency delivery check)
-- [x] **Step 8: SHA Contract Issuer & Immutable Snapshot Engine** (Problem 1 Solution: SHA-locked contracts)
-- [x] **Step 9: Redis Tiered Priority Worker** (Problem 2 Solution: P0 hotfix starvation-free dequeue)
-- [x] **Step 10: Exact Git Checkout & Shared Clone Cache** (Bottleneck #1 Fix: bare clone caching & shallow fetch)
-- [x] **Step 11: Deterministic Parallel Static Analysis** (Bottleneck #3 Fix: Linters, SAST, secret scan with timeouts & partial proceed)
-- [x] **Step 12: pgvector + Incremental Repository RAG** (Bottleneck #2 Fix: cache-first embedding gate before vector search)
-- [x] **Step 13: LangGraph State Machine Orchestration** (Bottleneck #5 Fix: async multi-agent graph with circuit breaker)
-- [x] **Step 14: Multi-Agent Code Review** (Bug detection, security analysis, code quality)
-- [x] **Step 15: Unit Test Generation Agent** (Diff-targeted unit test synthesis)
-- [x] **Step 16: Docker Test Sandbox Execution Engine** (Problem 3 Solution: real sandbox execution with stdout/stderr proof)
-- [x] **Step 17: Evidence Validation & Hallucination Filter** (Problem 3 Solution: hard gate dropping unverifiable file/line findings)
-- [x] **Step 18: Freshness Check Gate** (Problem 1 Solution: pre-publish SHA comparison to discard stale runs)
-- [x] **Step 19: GitHub Status Checks & Review Comments** (Formatted PR markdown with verified confidence scores)
-- [x] **Step 20: OpenTelemetry Tracing & Observability** (FastAPI instrumentation, OTEL collector, Prometheus metrics)
-- [x] **Step 21: End-to-End System Integration Testing** (Automated full pipeline integration test)
+### Phase 1: Core Engine & Reliability (All 21 Steps Complete ✅)
+- [x] Steps 1–21 (SHA Contract, Redis Queue, Shared Clone Cache, Static Analysis, RAG, LangGraph, Docker Sandbox, Evidence Filter, Freshness Check, Grafana).
+
+### Phase 2: Distributed Scaling & Performance Optimization (Active & Tested ✅)
+- [x] **Pre-Warmed Sandbox Pool (`POOL_MGR`)**: `src/sandbox/pool.py` sub-second runner leasing with reset scrubbing.
+- [x] **Partial Artifact Salvage Gate (`SALVAGE_GATE`)**: `src/services/salvage_gate.py` unchanged file AST/embedding reuse.
+- [x] **Split Write Path & Async Write Queue**: `src/db/write_queue.py` micro-batched persistence to eliminate DB lock contention.
+- [x] **Agent Circuit Breakers**: `src/agents/circuit_breaker.py` 90s timeout guards and degraded static-analysis fallback.
+- [x] **Dynamic Capacity Manager & Starvation Aging**: `src/worker/capacity.py` live worker heartbeat headroom & P2/P3 aging promotion.
+- [x] **Multi-Topic Queue Partitioning**: `src/worker/kafka_queue.py` topic isolation (`pr-p0-hotfix`, `pr-p1-security`, `pr-p2-normal`, `pr-p3-low`).
+- [x] **Stage 2 Automated Test Suite**: `tests/test_stage2_components.py` (9/9 tests passing on AWS EC2).
 
 ---
 
