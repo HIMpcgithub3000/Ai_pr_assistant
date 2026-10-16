@@ -6,20 +6,25 @@ from typing import Any
 import docker
 
 from src.config import settings
+from src.sandbox.pool import SandboxPoolManager
 
 
 class DockerTestSandbox:
     """
     Problem 3 Solution: Isolated Execution of AI-Generated Tests.
-    Executes tests inside a sandboxed container to ensure no LLM hallucination
-    can claim a test passed without real stdout/stderr execution proof.
+    Stage 2 Enhancement: Uses Pre-Warmed Sandbox Pool (POOL_MGR) to achieve
+    sub-second test execution without cold-start container spin-up delays.
     """
 
     def __init__(
-        self, image: str = settings.SANDBOX_IMAGE, timeout: int = settings.SANDBOX_TIMEOUT_SECONDS
+        self,
+        image: str = settings.SANDBOX_IMAGE,
+        timeout: int = settings.SANDBOX_TIMEOUT_SECONDS,
+        pool_manager: SandboxPoolManager | None = None,
     ):
         self.image = image
         self.timeout = timeout
+        self.pool_manager = pool_manager or SandboxPoolManager()
         try:
             self.docker_client = docker.from_env()
         except Exception:
@@ -32,9 +37,24 @@ class DockerTestSandbox:
         test_name: str = "test_generated.py",
     ) -> dict[str, Any]:
         """
-        Runs the test code against the repository in an isolated environment.
+        Runs the test code using the pre-warmed sandbox pool with fallback options.
         Captures exact stdout, stderr, exit code, and pass/fail proof.
         """
+        # Primary Stage 2 Path: Pre-warmed sandbox pool
+        try:
+            sandbox = await self.pool_manager.acquire_sandbox()
+            try:
+                return await sandbox.execute_test(
+                    target_dir=checkout_dir,
+                    test_code=test_code,
+                    test_name=test_name,
+                    timeout=self.timeout,
+                )
+            finally:
+                await self.pool_manager.release_sandbox(sandbox)
+        except Exception:
+            # Fallback path if pool is uninitialized
+            pass
         # Write test code to a temporary test file in checkout
         abs_checkout_dir = os.path.abspath(checkout_dir)
         test_file_path = os.path.join(abs_checkout_dir, test_name)
