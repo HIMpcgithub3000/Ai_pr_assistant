@@ -5,14 +5,17 @@ from typing import Any
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.agents.circuit_breaker import AgentCircuitBreaker
 from src.agents.graph import analysis_graph
 from src.db.models import AnalysisFinding, AnalysisRun, TestEvidence
+from src.db.write_queue import AsyncWriteQueue
 from src.sandbox.runner import DockerTestSandbox
 from src.services.evidence_validator import EvidenceValidator
 from src.services.freshness_checker import FreshnessChecker
 from src.services.git_manager import GitManager
 from src.services.github_client import GitHubClient
 from src.services.rag_engine import RAGEngine
+from src.services.salvage_gate import SalvageGateService
 from src.services.static_analysis import StaticAnalysisService
 
 
@@ -20,6 +23,11 @@ class PRAnalysisProcessor:
     """
     Orchestrates the complete 21-step PR analysis pipeline:
     Git Checkout -> Static Analysis -> RAG -> LangGraph Agents -> Sandbox Tests -> Evidence Filter -> Freshness Gate -> GitHub Comment
+    Stage 2 Enhancements:
+    - Pre-Warmed Sandbox Pool (POOL_MGR)
+    - Agent Circuit Breakers (CIRCUIT_BREAKER) with degraded fallback
+    - Partial Artifact Salvage Gate (SALVAGE_GATE) on stale runs
+    - Micro-batched async write queue for high throughput
     """
 
     def __init__(self):
@@ -30,6 +38,9 @@ class PRAnalysisProcessor:
         self.freshness_checker = FreshnessChecker()
         self.github_client = GitHubClient()
         self.sandbox = DockerTestSandbox()
+        self.circuit_breaker = AgentCircuitBreaker()
+        self.salvage_gate = SalvageGateService()
+        self.write_queue = AsyncWriteQueue()
 
     async def process_analysis_run(
         self,
@@ -113,7 +124,36 @@ class PRAnalysisProcessor:
                 "circuit_broken": False,
                 "status": "PROCESSING",
             }
-            agent_output = await analysis_graph.ainvoke(graph_input)
+
+            async def _circuit_fallback(state: dict[str, Any]) -> dict[str, Any]:
+                """Degraded static-analysis fallback when agent circuit trips or times out."""
+                s_findings = state.get("static_findings", [])
+                degraded = []
+                for sf in s_findings:
+                    degraded.append({
+                        "file_path": sf.get("file_path", "unknown"),
+                        "line_number": sf.get("line_number"),
+                        "symbol_name": sf.get("symbol_name"),
+                        "category": sf.get("category", "QUALITY"),
+                        "severity": sf.get("severity", "MEDIUM"),
+                        "title": f"[Degraded Mode] {sf.get('title', 'Static Analysis finding')}",
+                        "description": sf.get("description", "Identified via static analysis fallback (Agent circuit breaker active)."),
+                        "suggestion": sf.get("suggestion", "Review code against static check."),
+                        "verified": True,
+                        "confidence": 0.85,
+                    })
+                return {
+                    **state,
+                    "all_findings": degraded,
+                    "circuit_broken": True,
+                    "status": "CIRCUIT_BROKEN",
+                }
+
+            agent_output = await self.circuit_breaker.call(
+                analysis_graph.ainvoke,
+                _circuit_fallback,
+                graph_input,
+            )
             raw_findings = agent_output.get("all_findings", [])
             generated_test = agent_output.get("generated_test_code")
 
@@ -172,12 +212,18 @@ class PRAnalysisProcessor:
             )
 
             if not is_fresh:
-                # Discard publishing
+                # Discard publishing, but invoke Salvage Gate for intermediate artifact reuse
+                salvage_delta = job_data.get("new_delta_files", [])
+                salvageable_files = self.salvage_gate.identify_salvageable_files(
+                    all_pr_files=changed_files,
+                    stale_to_new_delta_files=salvage_delta,
+                )
                 return {
                     "analysis_id": analysis_id,
                     "status": "STALE",
                     "reason": freshness_reason,
                     "published": False,
+                    "salvageable_files": salvageable_files,
                 }
 
             # 9. Step 19: GitHub Check Status & Comment Posting

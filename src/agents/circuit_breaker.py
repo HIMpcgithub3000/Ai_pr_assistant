@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import time
 from enum import Enum
 from typing import Any, Callable
 
@@ -33,7 +34,7 @@ class AgentCircuitBreaker:
 
         self.state = CircuitState.CLOSED
         self.failure_count = 0
-        self.last_state_change = asyncio.get_event_loop().time()
+        self.last_state_change = time.time()
         self.total_trips = 0
 
     async def call(
@@ -44,7 +45,7 @@ class AgentCircuitBreaker:
         **kwargs: Any,
     ) -> Any:
         """Executes func with circuit breaker protection and automatic fallback routing."""
-        now = asyncio.get_event_loop().time()
+        now = time.time()
 
         # If OPEN, check if recovery window has elapsed to probe HALF_OPEN
         if self.state == CircuitState.OPEN:
@@ -65,7 +66,7 @@ class AgentCircuitBreaker:
             if self.state == CircuitState.HALF_OPEN:
                 self.state = CircuitState.CLOSED
                 self.failure_count = 0
-                self.last_state_change = asyncio.get_event_loop().time()
+                self.last_state_change = time.time()
             return result
 
         except Exception as ex:
@@ -73,7 +74,7 @@ class AgentCircuitBreaker:
             if self.failure_count >= self.failure_threshold or self.state == CircuitState.HALF_OPEN:
                 self.state = CircuitState.OPEN
                 self.total_trips += 1
-                self.last_state_change = asyncio.get_event_loop().time()
+                self.last_state_change = time.time()
 
             return await self._execute_fallback(fallback_func, *args, **kwargs)
 
