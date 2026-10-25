@@ -11,7 +11,7 @@
 | Environment | OS / Specs | Runtimes & Services |
 |:---|:---|:---|
 | **Local Development** | macOS (Apple Silicon / Intel) | Docker Desktop / OrbStack, Python 3.11+, Git |
-| **AWS Cloud** | Ubuntu 22.04 / 24.04 LTS (EC2: `65.1.2.250`) | Docker Engine + Compose plugin, Python 3.11+, Git |
+| **AWS Cloud** | Ubuntu 22.04 / 24.04 LTS (EC2: `13.201.6.39`) | Docker Engine + Compose plugin, Python 3.11+, Git |
 
 ---
 
