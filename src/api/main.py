@@ -3,11 +3,13 @@ import hmac
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dashboard_ui import get_dashboard_html
 from src.config import settings
 from src.db.models import AnalysisFinding, AnalysisRun, TestEvidence, WebhookEvent
 from src.db.session import get_db_session, init_db
@@ -82,6 +84,49 @@ async def get_live_queues():
         "cluster_headroom": headroom,
         "active_workers": active_workers,
     }
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/ui", response_class=HTMLResponse)
+async def serve_dashboard():
+    """Serves the clean React Mission Control UI."""
+    return HTMLResponse(content=get_dashboard_html(), status_code=200)
+
+
+@app.get("/api/v1/runs")
+async def list_runs(limit: int = 25, db: AsyncSession = Depends(get_db_session)):
+    """Lists recent analysis runs with summarized statistics for the React UI."""
+    stmt = select(AnalysisRun).order_by(AnalysisRun.created_at.desc()).limit(limit)
+    res = await db.execute(stmt)
+    runs = res.scalars().all()
+
+    output = []
+    for r in runs:
+        findings_count_res = await db.execute(
+            select(func.count(AnalysisFinding.id)).where(AnalysisFinding.analysis_id == r.id)
+        )
+        findings_count = findings_count_res.scalar() or 0
+
+        evidence_res = await db.execute(
+            select(TestEvidence.passed).where(TestEvidence.analysis_id == r.id).limit(1)
+        )
+        test_passed = evidence_res.scalar_one_or_none()
+
+        output.append({
+            "id": r.id,
+            "repository_id": r.repository_id,
+            "pr_number": r.pr_number,
+            "head_sha": r.head_sha,
+            "base_sha": r.base_sha,
+            "priority": r.priority,
+            "status": r.status,
+            "is_fresh": r.is_fresh,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "findings_count": findings_count,
+            "test_passed": test_passed,
+        })
+    return output
 
 
 def verify_github_signature(payload: bytes, signature_header: str | None) -> bool:
