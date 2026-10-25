@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from .state import AnalysisGraphState
@@ -76,18 +77,30 @@ class ReviewAgents:
         changed_files = state.get("changed_files", [])
         findings: list[dict[str, Any]] = []
 
-        for line_no, line in enumerate(diff.splitlines(), start=1):
-            if line.startswith("+") and "TODO" in line:
-                findings.append(
-                    {
-                        "file_path": changed_files[0] if changed_files else "unknown",
-                        "line_number": line_no,
-                        "category": "QUALITY",
-                        "severity": "LOW",
-                        "title": "Unresolved TODO detected",
-                        "description": "Unresolved TODO committed in new code.",
-                        "suggestion": "Resolve before merge or track in issue tracker.",
-                    }
-                )
+        current_file = changed_files[0] if changed_files else "unknown"
+        current_new_line = 0
+        for line in diff.splitlines():
+            if line.startswith("+++ b/"):
+                current_file = line[6:].strip()
+            elif line.startswith("@@"):
+                m = re.search(r"\+(\d+)", line)
+                if m:
+                    current_new_line = int(m.group(1)) - 1
+            elif line.startswith("+") and not line.startswith("+++"):
+                current_new_line += 1
+                if "TODO" in line:
+                    findings.append(
+                        {
+                            "file_path": current_file,
+                            "line_number": max(1, current_new_line),
+                            "category": "QUALITY",
+                            "severity": "LOW",
+                            "title": "Unresolved TODO detected",
+                            "description": "Unresolved TODO committed in new code.",
+                            "suggestion": "Resolve before merge or track in issue tracker.",
+                        }
+                    )
+            elif not line.startswith("-"):
+                current_new_line += 1
 
         return {"quality_findings": findings}

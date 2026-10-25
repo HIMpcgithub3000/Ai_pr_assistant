@@ -12,7 +12,7 @@ class StaticAnalysisService:
     async def run_secret_scanner(
         self, code_diff: str, timeout: float = 10.0
     ) -> list[dict[str, Any]]:
-        """Scans diff for hardcoded API keys, JWTs, and AWS secrets."""
+        """Scans diff for hardcoded API keys, JWTs, and AWS secrets with precise file and line tracking."""
 
         async def _scan():
             findings = []
@@ -25,8 +25,17 @@ class StaticAnalysisService:
                 (r"ghp_[a-zA-Z0-9]{36}", "CRITICAL", "GitHub Personal Access Token detected"),
                 (r"AKIA[0-9A-Z]{16}", "CRITICAL", "AWS Access Key ID detected"),
             ]
-            for line_idx, line in enumerate(code_diff.splitlines(), start=1):
-                if line.startswith("+"):
+            current_file = None
+            current_new_line = 0
+            for line in code_diff.splitlines():
+                if line.startswith("+++ b/"):
+                    current_file = line[6:].strip()
+                elif line.startswith("@@"):
+                    m = re.search(r"\+(\d+)", line)
+                    if m:
+                        current_new_line = int(m.group(1)) - 1
+                elif line.startswith("+") and not line.startswith("+++"):
+                    current_new_line += 1
                     for pattern, severity, desc in secret_patterns:
                         if re.search(pattern, line):
                             findings.append(
@@ -34,10 +43,13 @@ class StaticAnalysisService:
                                     "tool": "secret_scanner",
                                     "severity": severity,
                                     "message": desc,
+                                    "file_path": current_file or "unknown",
                                     "line_content": line[:80],
-                                    "line_number": line_idx,
+                                    "line_number": max(1, current_new_line),
                                 }
                             )
+                elif not line.startswith("-"):
+                    current_new_line += 1
             return findings
 
         try:
@@ -101,8 +113,17 @@ class StaticAnalysisService:
                     "Potential SQL Injection via string formatting",
                 ),
             ]
-            for line_idx, line in enumerate(code_diff.splitlines(), start=1):
-                if line.startswith("+"):
+            current_file = None
+            current_new_line = 0
+            for line in code_diff.splitlines():
+                if line.startswith("+++ b/"):
+                    current_file = line[6:].strip()
+                elif line.startswith("@@"):
+                    m = re.search(r"\+(\d+)", line)
+                    if m:
+                        current_new_line = int(m.group(1)) - 1
+                elif line.startswith("+") and not line.startswith("+++"):
+                    current_new_line += 1
                     for pattern, severity, desc in sast_rules:
                         if re.search(pattern, line):
                             findings.append(
@@ -110,10 +131,13 @@ class StaticAnalysisService:
                                     "tool": "sast",
                                     "severity": severity,
                                     "message": desc,
+                                    "file_path": current_file or "unknown",
                                     "line_content": line[:80],
-                                    "line_number": line_idx,
+                                    "line_number": max(1, current_new_line),
                                 }
                             )
+                elif not line.startswith("-"):
+                    current_new_line += 1
             return findings
 
         try:
