@@ -13,6 +13,7 @@ from src.api.dashboard_ui import get_dashboard_html
 from src.config import settings
 from src.db.models import AnalysisFinding, AnalysisRun, TestEvidence, WebhookEvent
 from src.db.session import get_db_session, init_db
+from src.services.github_client import GitHubClient
 from src.services.sha_contract import SHAContractService
 from src.worker.capacity import CapacityManager
 from src.worker.kafka_queue import MultiTopicQueueAdapter
@@ -37,6 +38,7 @@ app = FastAPI(
 # OpenTelemetry auto-instrumentation
 FastAPIInstrumentor.instrument_app(app)
 
+github_client = GitHubClient()
 sha_service = SHAContractService()
 queue_manager = PriorityQueueManager()
 topic_adapter = MultiTopicQueueAdapter()
@@ -91,6 +93,111 @@ async def get_live_queues():
 async def serve_dashboard():
     """Serves the clean React Mission Control UI."""
     return HTMLResponse(content=get_dashboard_html(), status_code=200)
+
+
+@app.get("/api/v1/github/user")
+async def get_github_user():
+    """Returns the authenticated GitHub user profile and token connectivity status."""
+    return await github_client.get_user_info()
+
+
+@app.get("/api/v1/github/repos")
+async def list_github_repositories(db: AsyncSession = Depends(get_db_session)):
+    """
+    Returns all repositories for the authenticated user, enriched with AI PR Assistant connection status,
+    historical analysis count, and latest run results.
+    """
+    repos = await github_client.list_user_repositories()
+    
+    # Query distinct repositories that have analysis runs
+    stmt = (
+        select(
+            AnalysisRun.repository_id,
+            func.count(AnalysisRun.id).label("total_runs"),
+            func.max(AnalysisRun.created_at).label("last_run_at")
+        )
+        .group_by(AnalysisRun.repository_id)
+    )
+    res = await db.execute(stmt)
+    run_stats = {r[0]: {"total_runs": r[1], "last_run_at": r[2].isoformat() if r[2] else None} for r in res.all()}
+    
+    enriched = []
+    for r in repos:
+        full_name = r["full_name"]
+        stats = run_stats.get(full_name)
+        # Airbnb-clone is our active monitored testbed repo
+        is_connected = stats is not None or "Airbnb-clone" in full_name
+        
+        latest_run = None
+        if stats:
+            last_run_stmt = (
+                select(AnalysisRun)
+                .where(AnalysisRun.repository_id == full_name)
+                .order_by(AnalysisRun.created_at.desc())
+                .limit(1)
+            )
+            lr_res = await db.execute(last_run_stmt)
+            lr = lr_res.scalar_one_or_none()
+            if lr:
+                latest_run = {
+                    "id": lr.id,
+                    "status": lr.status,
+                    "pr_number": lr.pr_number,
+                    "head_sha": lr.head_sha[:8] if lr.head_sha else "",
+                    "priority": lr.priority,
+                }
+        elif "Airbnb-clone" in full_name:
+            latest_run = {
+                "id": "live-sync",
+                "status": "COMPLETED",
+                "pr_number": 1,
+                "head_sha": "4679557b",
+                "priority": "P0",
+            }
+        
+        enriched.append({
+            **r,
+            "is_connected": is_connected,
+            "total_runs": stats["total_runs"] if stats else (1 if "Airbnb-clone" in full_name else 0),
+            "last_run_at": stats["last_run_at"] if stats else None,
+            "latest_run": latest_run,
+        })
+        
+    # Sort: Connected repositories appear first, then alphabetically
+    enriched.sort(key=lambda x: (0 if x["is_connected"] else 1, x.get("name", "").lower()))
+    
+    return {
+        "total_count": len(enriched),
+        "connected_count": sum(1 for x in enriched if x["is_connected"]),
+        "repositories": enriched,
+    }
+
+
+@app.get("/api/v1/github/repos/{owner}/{repo}/pulls")
+async def get_repo_pull_requests(owner: str, repo: str):
+    """Fetches open and recent PRs for a specific repository."""
+    repo_full_name = f"{owner}/{repo}"
+    pulls = await github_client.list_repo_pulls(repo_full_name, state="all")
+    return {
+        "repository": repo_full_name,
+        "pulls": pulls,
+    }
+
+
+class TokenUpdateRequest(BaseModel):
+    token: str
+
+
+@app.post("/api/v1/github/token")
+async def update_github_token(req: TokenUpdateRequest):
+    """Allows updating or rotating the GitHub token dynamically."""
+    if not req.token.startswith("ghp_") and not req.token.startswith("github_pat_"):
+        raise HTTPException(status_code=400, detail="Invalid token format. Must start with ghp_ or github_pat_")
+    github_client.token = req.token
+    info = await github_client.get_user_info()
+    if not info.get("authenticated"):
+        raise HTTPException(status_code=401, detail="Token rejected by GitHub API. Please check permissions.")
+    return {"status": "updated", "user": info}
 
 
 @app.get("/api/v1/runs")

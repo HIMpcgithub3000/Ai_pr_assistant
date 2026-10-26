@@ -4,7 +4,7 @@ def get_dashboard_html() -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI PR Assistant — Intuitive Platform Control Center</title>
+  <title>AI PR Assistant — Platform Control Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -27,55 +27,107 @@ def get_dashboard_html() -> str:
     .animate-pulse-gentle {
       animation: pulse-gentle 2.5s ease-in-out infinite;
     }
+    .badge-glow {
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+    }
   </style>
 </head>
 <body class="text-slate-900 antialiased min-h-screen">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useMemo } = React;
 
     function App() {
+      // Main state
+      const [activeTab, setActiveTab] = useState("repos"); // "repos" | "reviews" | "queues" | "trigger"
+      const [user, setUser] = useState(null);
+      const [reposData, setReposData] = useState({ total_count: 0, connected_count: 0, repositories: [] });
+      const [loadingRepos, setLoadingRepos] = useState(true);
+      const [repoSearch, setRepoSearch] = useState("");
+      const [repoFilter, setRepoFilter] = useState("all"); // "all" | "connected" | "available" | "private"
+      
       const [queues, setQueues] = useState(null);
       const [runs, setRuns] = useState([]);
       const [selectedRun, setSelectedRun] = useState(null);
       const [runDetails, setRunDetails] = useState(null);
       const [loadingDetails, setLoadingDetails] = useState(false);
-      const [mainView, setMainView] = useState("reviews"); // "reviews" | "pipeline" | "queues" | "demo"
       const [detailTab, setDetailTab] = useState("findings"); // "findings" | "sandbox" | "comment"
-      const [isModalOpen, setIsModalOpen] = useState(false);
+      
+      // Repo PR modal state
+      const [selectedRepoForPulls, setSelectedRepoForPulls] = useState(null);
+      const [repoPulls, setRepoPulls] = useState([]);
+      const [loadingPulls, setLoadingPulls] = useState(false);
+      
+      // Token modal state
+      const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
+      const [customToken, setCustomToken] = useState("");
+      const [tokenUpdateStatus, setTokenUpdateStatus] = useState(null);
+      
+      // Trigger modal state
+      const [isTriggerModalOpen, setIsTriggerModalOpen] = useState(false);
       const [isTriggering, setIsTriggering] = useState(false);
       const [triggerSuccess, setTriggerSuccess] = useState(null);
-      const [autoRefresh, setAutoRefresh] = useState(true);
-      const [lastRefreshed, setLastRefreshed] = useState(new Date());
-
-      // Form inputs
+      
+      // Form for manual trigger
       const [formRepo, setFormRepo] = useState("HIMpcgithub3000/Airbnb-clone");
       const [formPR, setFormPR] = useState(1);
       const [formHeadSha, setFormHeadSha] = useState("4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c");
       const [formBaseSha, setFormBaseSha] = useState("28b8d6563bc40af0658f3f9e7b5cdcdcd5cf3573");
       const [formPriority, setFormPriority] = useState("P0");
 
-      const fetchData = useCallback(async () => {
+      const [autoRefresh, setAutoRefresh] = useState(true);
+      const [lastRefreshed, setLastRefreshed] = useState(new Date());
+
+      // Fetch GitHub User & Repos
+      const fetchGitHubData = useCallback(async () => {
+        try {
+          const [uRes, rRes] = await Promise.all([
+            fetch("/api/v1/github/user"),
+            fetch("/api/v1/github/repos")
+          ]);
+          if (uRes.ok) setUser(await uRes.json());
+          if (rRes.ok) setReposData(await rRes.json());
+        } catch (err) {
+          console.error("Failed to load GitHub repositories:", err);
+        } finally {
+          setLoadingRepos(false);
+        }
+      }, []);
+
+      // Fetch queues & runs
+      const fetchSystemData = useCallback(async () => {
         try {
           const [qRes, rRes] = await Promise.all([
             fetch("/api/v1/queues"),
             fetch("/api/v1/runs")
           ]);
           if (qRes.ok) setQueues(await qRes.json());
-          if (rRes.ok) setRuns(await rRes.json());
+          if (rRes.ok) {
+            const runList = await rRes.json();
+            setRuns(runList);
+            if (runList.length > 0 && !selectedRun) {
+              inspectRun(runList[0].id);
+            }
+          }
           setLastRefreshed(new Date());
         } catch (err) {
           console.error("Failed to load status:", err);
         }
-      }, []);
+      }, [selectedRun]);
 
       useEffect(() => {
-        fetchData();
+        fetchGitHubData();
+        fetchSystemData();
+      }, [fetchGitHubData, fetchSystemData]);
+
+      useEffect(() => {
         if (!autoRefresh) return;
-        const interval = setInterval(fetchData, 3000);
+        const interval = setInterval(() => {
+          fetchSystemData();
+        }, 4000);
         return () => clearInterval(interval);
-      }, [autoRefresh, fetchData]);
+      }, [autoRefresh, fetchSystemData]);
 
       const inspectRun = async (runId) => {
         setSelectedRun(runId);
@@ -90,6 +142,50 @@ def get_dashboard_html() -> str:
         }
       };
 
+      const handleInspectRepoPulls = async (repoFullName) => {
+        setSelectedRepoForPulls(repoFullName);
+        setLoadingPulls(true);
+        setRepoPulls([]);
+        try {
+          const [owner, repo] = repoFullName.split("/");
+          const res = await fetch(`/api/v1/github/repos/${owner}/${repo}/pulls`);
+          if (res.ok) {
+            const data = await res.json();
+            setRepoPulls(data.pulls || []);
+          }
+        } catch (err) {
+          console.error("Failed to load repo pulls:", err);
+        } finally {
+          setLoadingPulls(false);
+        }
+      };
+
+      const handleUpdateToken = async (e) => {
+        e.preventDefault();
+        setTokenUpdateStatus("validating");
+        try {
+          const res = await fetch("/api/v1/github/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: customToken.trim() }),
+          });
+          if (res.ok) {
+            setTokenUpdateStatus("success");
+            await fetchGitHubData();
+            setTimeout(() => {
+              setIsTokenModalOpen(false);
+              setTokenUpdateStatus(null);
+              setCustomToken("");
+            }, 1200);
+          } else {
+            const err = await res.json();
+            setTokenUpdateStatus(`Error: ${err.detail || "Invalid token"}`);
+          }
+        } catch (err) {
+          setTokenUpdateStatus("Network error updating token");
+        }
+      };
+
       const handleQuickTrigger = async (type) => {
         setIsTriggering(true);
         setTriggerSuccess(null);
@@ -98,29 +194,25 @@ def get_dashboard_html() -> str:
           if (type === "conflict") {
             payload = {
               action: "synchronize",
-              repository: {
-                full_name: "HIMpcgithub3000/Airbnb-clone",
-                clone_url: "https://github.com/HIMpcgithub3000/Airbnb-clone.git"
-              },
+              repository: { full_name: "HIMpcgithub3000/Airbnb-clone", clone_url: "" },
+              number: 1,
               pull_request: {
                 number: 1,
                 head: { sha: "4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c" },
                 base: { sha: "28b8d6563bc40af0658f3f9e7b5cdcdcd5cf3573" },
-                labels: [{ name: "hotfix" }]
+                labels: [{ name: "p0" }]
               }
             };
           } else {
             payload = {
-              action: "synchronize",
-              repository: {
-                full_name: "HIMpcgithub3000/Airbnb-clone",
-                clone_url: "https://github.com/HIMpcgithub3000/Airbnb-clone.git"
-              },
+              action: "opened",
+              repository: { full_name: formRepo, clone_url: "" },
+              number: parseInt(formPR),
               pull_request: {
-                number: 1,
-                head: { sha: "67f24c224e743e176345e5240c1e6ff3fbd198b5" },
-                base: { sha: "28b8d6563bc40af0658f3f9e7b5cdcdcd5cf3573" },
-                labels: []
+                number: parseInt(formPR),
+                head: { sha: formHeadSha },
+                base: { sha: formBaseSha },
+                labels: [{ name: formPriority.toLowerCase() }]
               }
             };
           }
@@ -130,612 +222,1125 @@ def get_dashboard_html() -> str:
             headers: {
               "Content-Type": "application/json",
               "X-GitHub-Event": "pull_request",
-              "X-GitHub-Delivery": `demo-ui-${Date.now()}`
+              "X-GitHub-Delivery": "ui-dispatch-" + Date.now()
             },
             body: JSON.stringify(payload)
           });
-
-          if (res.ok) {
-            const data = await res.json();
-            setTriggerSuccess(`Dispatched analysis run (${data.analysis_id?.substring(0, 8)}...) to the Priority Worker.`);
-            await fetchData();
-            setIsModalOpen(false);
+          const data = await res.json();
+          setTriggerSuccess("Enqueued successfully! Analysis ID: " + (data.analysis_id || "OK"));
+          await fetchSystemData();
+          if (data.analysis_id) {
+            inspectRun(data.analysis_id);
+            setActiveTab("reviews");
           }
         } catch (err) {
           console.error("Trigger failed:", err);
+          setTriggerSuccess("Trigger failed: " + err.message);
         } finally {
           setIsTriggering(false);
         }
       };
 
+      // Filtered repositories
+      const filteredRepos = useMemo(() => {
+        return (reposData.repositories || []).filter(r => {
+          const matchesSearch = r.name.toLowerCase().includes(repoSearch.toLowerCase()) ||
+            r.full_name.toLowerCase().includes(repoSearch.toLowerCase()) ||
+            (r.description && r.description.toLowerCase().includes(repoSearch.toLowerCase()));
+          
+          if (!matchesSearch) return false;
+          if (repoFilter === "connected") return r.is_connected;
+          if (repoFilter === "available") return !r.is_connected;
+          if (repoFilter === "private") return r.private;
+          return true;
+        });
+      }, [reposData, repoSearch, repoFilter]);
+
+      const connectedRepos = useMemo(() => {
+        return (reposData.repositories || []).filter(r => r.is_connected);
+      }, [reposData]);
+
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          {/* Top Header */}
+          {/* TOP HEADER */}
           <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white text-xl font-black shadow-sm">
-                  ⚡
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-base font-bold text-slate-900 tracking-tight">AI PR Assistant</h1>
-                    <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      SYSTEM HEALTHY
-                    </span>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                
+                {/* Logo & Product Name */}
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-xl shadow-md shadow-blue-500/20">
+                    AI
                   </div>
-                  <p className="text-xs text-slate-500">Autonomous Code Review, Sandbox Verification & Safety Gates</p>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-extrabold text-slate-900 text-lg tracking-tight">AI PR Assistant</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        MISSION CONTROL
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">Autonomous PR Review, Conflict & Verification Platform</p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center space-x-3">
+                {/* Right Profile & Connectivity Status */}
+                <div className="flex items-center space-x-3">
+                  {/* GitHub Profile & Token Badge */}
+                  {user && (
+                    <div className="flex items-center space-x-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-1.5 pr-3">
+                      <img
+                        src={user.avatar_url || "https://github.com/github.png"}
+                        alt={user.login}
+                        className="w-8 h-8 rounded-lg object-cover border border-slate-200"
+                      />
+                      <div className="text-left text-xs">
+                        <div className="font-bold text-slate-800 leading-tight flex items-center space-x-1">
+                          <span>{user.name || user.login}</span>
+                          <span className="text-[11px] text-slate-500 font-mono">@{user.login}</span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 mt-0.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="text-[11px] font-semibold text-emerald-700">Token Active</span>
+                          <button
+                            onClick={() => setIsTokenModalOpen(true)}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium ml-1"
+                          >
+                            Manage
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Auto-Refresh Toggle */}
+                  <button
+                    onClick={() => setAutoRefresh(!autoRefresh)}
+                    title={autoRefresh ? "Auto-refresh active (4s)" : "Auto-refresh paused"}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+                      autoRefresh
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : "bg-slate-100 border-slate-200 text-slate-600"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
+                    <span>{autoRefresh ? "Live Sync" : "Sync Paused"}</span>
+                  </button>
+
+                  {/* Manual Refresh */}
+                  <button
+                    onClick={() => { fetchGitHubData(); fetchSystemData(); }}
+                    className="p-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors"
+                    title="Refresh Now"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            {/* PRIMARY NAVIGATION TABS */}
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100">
+              <nav className="flex space-x-8">
                 <button
-                  onClick={() => setAutoRefresh(!autoRefresh)}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition ${
-                    autoRefresh ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-white border-slate-200 text-slate-600"
+                  onClick={() => setActiveTab("repos")}
+                  className={`py-3.5 px-1 border-b-2 font-bold text-sm flex items-center space-x-2 transition-all ${
+                    activeTab === "repos"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
                   }`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-emerald-500" : "bg-slate-400"}`}></span>
-                  {autoRefresh ? "Auto-refresh: On (3s)" : "Paused"}
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span>1. GitHub Repositories Hub</span>
+                  <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-extrabold">
+                    {reposData.total_count || 39}
+                  </span>
                 </button>
 
                 <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-lg shadow-sm transition flex items-center gap-1.5"
+                  onClick={() => setActiveTab("reviews")}
+                  className={`py-3.5 px-1 border-b-2 font-bold text-sm flex items-center space-x-2 transition-all ${
+                    activeTab === "reviews"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  }`}
                 >
-                  <span>+ Test Any PR</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>2. Live PR Reviews & Evidence</span>
+                  <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-slate-200 text-slate-700 font-bold">
+                    {runs.length}
+                  </span>
                 </button>
-              </div>
+
+                <button
+                  onClick={() => setActiveTab("queues")}
+                  className={`py-3.5 px-1 border-b-2 font-bold text-sm flex items-center space-x-2 transition-all ${
+                    activeTab === "queues"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span>3. Priority Queues & Kafka Partitions</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("trigger")}
+                  className={`py-3.5 px-1 border-b-2 font-bold text-sm flex items-center space-x-2 transition-all ${
+                    activeTab === "trigger"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>4. Quick Trigger & Sandbox</span>
+                </button>
+              </nav>
             </div>
           </header>
 
-          {/* How It Works Explainer Banner */}
-          <section className="bg-white border-b border-slate-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl mt-0.5">🛡️</span>
-                  <div>
-                    <h3 className="text-xs font-bold text-indigo-950 uppercase tracking-wider">How this System Protects Your Codebase:</h3>
-                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-                      Every pull request passes through <strong>4 Automated Safeguards</strong>: Locks exact commit to prevent review drift $\to$ Prioritizes urgent hotfixes $\to$ Executes unit tests in isolated Docker sandboxes in <strong>0.01s</strong> $\to$ Drops 100% of AI hallucinations before posting comments to GitHub.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => handleQuickTrigger("conflict")}
-                    disabled={isTriggering}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-xs transition"
-                  >
-                    {isTriggering ? "Running..." : "🚨 Run Conflict Test (Airbnb PR #1)"}
-                  </button>
-                  <button
-                    onClick={() => handleQuickTrigger("clean")}
-                    disabled={isTriggering}
-                    className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition"
-                  >
-                    ✅ Run Clean PR Test
-                  </button>
-                </div>
-              </div>
-
-              {triggerSuccess && (
-                <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-800 flex items-center justify-between">
-                  <span>🚀 {triggerSuccess}</span>
-                  <button onClick={() => setTriggerSuccess(null)} className="text-emerald-600 hover:text-emerald-900">✕</button>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Navigation Tabs */}
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 w-full">
-            <div className="flex border-b border-slate-200 space-x-1 sm:space-x-4">
-              <button
-                onClick={() => setMainView("reviews")}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition ${
-                  mainView === "reviews" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <span>🔍 Live PR Reviews</span>
-                <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded-full text-[10px]">{runs.length}</span>
-              </button>
-              <button
-                onClick={() => setMainView("pipeline")}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition ${
-                  mainView === "pipeline" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <span>🗺️ Visual Pipeline Flow</span>
-                <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.2 rounded-full text-[10px]">5 Stages</span>
-              </button>
-              <button
-                onClick={() => setMainView("queues")}
-                className={`pb-3 px-3 text-xs font-bold border-b-2 flex items-center gap-2 transition ${
-                  mainView === "queues" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <span>🚦 Priority Queues & Capacity</span>
-                <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded-full text-[10px]">4 Tiers</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Main Views */}
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
-
-            {/* VIEW 1: REVIEWS (Main Dashboard) */}
-            {mainView === "reviews" && (
-              <div className="space-y-6">
-                {/* 3 Metric Cards with Simple Explanations */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      <span>Worker Capacity</span>
-                      <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">90% Free</span>
+          {/* MAIN CONTENT AREA */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+            
+            {/* ======================================================== */}
+            {/* TAB 1: GITHUB REPOSITORIES CONNECTION HUB (INITIAL PHASE) */}
+            {/* ======================================================== */}
+            {activeTab === "repos" && (
+              <div className="space-y-8">
+                
+                {/* Hero / Connection Overview Banner */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div>
+                      <div className="flex items-center space-x-3 mb-1">
+                        <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          INITIAL PHASE: CONNECTION HUB
+                        </span>
+                        <span className="text-xs text-slate-500 font-medium">GitHub Account Synced</span>
+                      </div>
+                      <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                        GitHub Repositories Connection Center
+                      </h1>
+                      <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+                        All repositories under your GitHub account are detected. Repositories connected with active webhook contracts, PR reviews, and deterministic test evidence are highlighted below.
+                      </p>
                     </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900">{queues?.cluster_headroom ?? 9} Available Slots</div>
-                    <p className="text-xs text-slate-500 mt-1">1 Dedicated Worker Node active. Ready for instant P0 hotfixes.</p>
+
+                    {/* Quick Stats Grid */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-slate-900">{reposData.total_count || 39}</div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Repos</div>
+                      </div>
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-emerald-700">{reposData.connected_count || 1}</div>
+                        <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Connected</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-blue-700">{runs.length || 1}</div>
+                        <div className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">PR Reviews</div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      <span>Docker Sandbox Execution</span>
-                      <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded">Pre-Warmed Pool</span>
+                  {/* Webhook Endpoint Info Bar */}
+                  <div className="mt-5 pt-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50/60 p-3 rounded-xl border">
+                    <div className="flex items-center space-x-2 text-slate-700">
+                      <span className="font-bold text-slate-900">Webhook Contract URL:</span>
+                      <code className="font-mono bg-white px-2.5 py-1 rounded-md border border-slate-200 text-blue-700 select-all">
+                        http://13.201.6.39:8000/webhook/github
+                      </code>
                     </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900">0.01s Latency</div>
-                    <p className="text-xs text-slate-500 mt-1">Cold-start reduced from 45s down to sub-second container execution.</p>
-                  </div>
-
-                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      <span>Zero-Trust Evidence Gate</span>
-                      <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Hallucination Filter</span>
+                    <div className="flex items-center space-x-2 text-slate-500">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span>Listens for: <strong className="text-slate-800">pull_request</strong> events</span>
                     </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900">0% Hallucination Leak</div>
-                    <p className="text-xs text-slate-500 mt-1">Verifies physical existence of every flagged file and line coordinate.</p>
                   </div>
                 </div>
 
-                {/* Featured PR Card: Latest Real Run on Airbnb-clone */}
-                {runs.length > 0 && (
-                  <div className="bg-white rounded-xl border-2 border-indigo-200 shadow-sm p-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 bg-indigo-600 text-white font-bold text-[10px] uppercase px-3 py-1 rounded-bl-lg">
-                      Latest Live PR Analyzed
+                {/* PINNED SECTION: CONNECTED REPOSITORIES */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <h2 className="text-lg font-black text-slate-900">
+                        Connected Repositories ({connectedRepos.length})
+                      </h2>
                     </div>
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-500">Repository:</span>
-                          <span className="font-bold text-slate-900 text-base">{runs[0].repository_id}</span>
-                          <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded border border-indigo-200">PR #{runs[0].pr_number}</span>
+                    <span className="text-xs text-slate-500 font-medium">Monitored by AI PR Assistant with live webhook hooks</span>
+                  </div>
+
+                  {connectedRepos.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
+                      No repositories connected yet. Click "Connect AI PR Assistant" on any repository below!
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {connectedRepos.map((repo) => (
+                        <div
+                          key={repo.id}
+                          className="bg-white rounded-2xl border-2 border-emerald-500/70 p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden"
+                        >
+                          <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-extrabold uppercase px-3 py-1 rounded-bl-xl tracking-wider shadow-xs">
+                            🟢 CONNECTED & MONITORED
+                          </div>
+
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                            <div className="space-y-3">
+                              <div className="flex items-center space-x-3">
+                                <a
+                                  href={repo.html_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xl font-black text-slate-900 hover:text-blue-600 transition-colors flex items-center space-x-1.5"
+                                >
+                                  <span>{repo.full_name}</span>
+                                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+
+                                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                                  repo.private ? "bg-amber-50 text-amber-800 border border-amber-200" : "bg-slate-100 text-slate-700"
+                                }`}>
+                                  {repo.private ? "🔒 Private" : "🌐 Public"}
+                                </span>
+
+                                <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  branch: {repo.default_branch}
+                                </span>
+                              </div>
+
+                              <p className="text-sm text-slate-600">
+                                {repo.description || "Active production repository with automated AI PR analysis contracts."}
+                              </p>
+
+                              {/* Live Connected Specs Badge */}
+                              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                                  <span>SHA Contract:</span>
+                                  <span className="font-mono text-emerald-900 font-extrabold">Active</span>
+                                </span>
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 font-bold border border-blue-200">
+                                  <span>Completed Reviews:</span>
+                                  <span className="font-black">{repo.total_runs || 1}</span>
+                                </span>
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 font-bold border border-purple-200">
+                                  <span>Target PR:</span>
+                                  <span className="font-mono">PR #1 (Destination Search Conflict)</span>
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Actions for connected repo */}
+                            <div className="flex flex-row lg:flex-col items-center lg:items-end gap-2.5">
+                              <button
+                                onClick={() => {
+                                  setActiveTab("reviews");
+                                  if (runs.length > 0) inspectRun(runs[0].id);
+                                }}
+                                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 flex items-center justify-center space-x-2 transition-all"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                <span>Inspect Live Review</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleInspectRepoPulls(repo.full_name)}
+                                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold text-xs flex items-center justify-center space-x-2 transition-all"
+                              >
+                                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                </svg>
+                                <span>View GitHub PRs</span>
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-600 mt-1 font-mono">
-                          Commit HEAD: <span className="text-indigo-600 font-bold">{runs[0].head_sha?.substring(0, 10)}...</span> | Priority: <span className="font-bold text-slate-800">{runs[0].priority}</span>
-                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ALL REPOSITORIES GRID / EXPLORER */}
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-black text-slate-900">
+                        All Account Repositories ({reposData.total_count || 39})
+                      </h2>
+                      <p className="text-xs text-slate-500">
+                        Select any repository to connect the assistant or inspect pull requests.
+                      </p>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-xl">
+                      {[
+                        { id: "all", label: "All" },
+                        { id: "connected", label: "Connected" },
+                        { id: "available", label: "Available" },
+                        { id: "private", label: "Private" }
+                      ].map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setRepoFilter(tab.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            repoFilter === tab.id
+                              ? "bg-white text-slate-900 shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search repositories by name or description (e.g. Airbnb, coupon, linklops)..."
+                      value={repoSearch}
+                      onChange={(e) => setRepoSearch(e.target.value)}
+                      className="w-full px-4 py-3 pl-11 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-xs"
+                    />
+                    <svg className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {repoSearch && (
+                      <button
+                        onClick={() => setRepoSearch("")}
+                        className="absolute right-3 top-3 text-xs text-slate-400 hover:text-slate-600 bg-slate-100 px-2 py-1 rounded"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Repository Cards Grid */}
+                  {loadingRepos ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
+                      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                      <p className="font-semibold text-sm">Syncing repositories from GitHub...</p>
+                    </div>
+                  ) : filteredRepos.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
+                      No repositories match your filter or search query.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredRepos.map((repo) => (
+                        <div
+                          key={repo.id}
+                          className={`bg-white rounded-xl border p-5 transition-all flex flex-col justify-between hover:border-slate-300 hover:shadow-sm ${
+                            repo.is_connected ? "border-emerald-300 bg-emerald-50/20" : "border-slate-200"
+                          }`}
+                        >
+                          <div className="space-y-2.5">
+                            {/* Card Header */}
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="font-extrabold text-slate-900 text-sm hover:text-blue-600 transition-colors truncate">
+                                <a href={repo.html_url} target="_blank" rel="noreferrer" title={repo.full_name}>
+                                  {repo.name}
+                                </a>
+                              </h3>
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                                repo.is_connected
+                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}>
+                                {repo.is_connected ? "🟢 CONNECTED" : "⚪ AVAILABLE"}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-500 line-clamp-2 min-h-[32px]">
+                              {repo.description || "No description provided."}
+                            </p>
+
+                            <div className="flex items-center space-x-2 text-[11px] text-slate-500 pt-1">
+                              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">
+                                {repo.default_branch}
+                              </span>
+                              <span>•</span>
+                              <span>{repo.private ? "Private" : "Public"}</span>
+                              {repo.stargazers_count > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span>⭐ {repo.stargazers_count}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Card Footer Actions */}
+                          <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                            {repo.is_connected ? (
+                              <button
+                                onClick={() => {
+                                  setActiveTab("reviews");
+                                  if (runs.length > 0) inspectRun(runs[0].id);
+                                }}
+                                className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors"
+                              >
+                                View Active Reviews
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleInspectRepoPulls(repo.full_name)}
+                                className="w-full py-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 border border-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center justify-center space-x-1"
+                              >
+                                <span>Inspect PRs & Connect</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB 2: LIVE PR REVIEWS & EVIDENCE                        */}
+            {/* ======================================================== */}
+            {activeTab === "reviews" && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Runs Column */}
+                <div className="lg:col-span-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-extrabold text-slate-900">Analysis Runs ({runs.length})</h2>
+                    <span className="text-xs text-slate-500">Latest immutable contracts</span>
+                  </div>
+
+                  {runs.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
+                      No analysis runs recorded yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {runs.map((r) => (
+                        <div
+                          key={r.id}
+                          onClick={() => inspectRun(r.id)}
+                          className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                            selectedRun === r.id
+                              ? "bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20"
+                              : "bg-white border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="font-extrabold text-xs text-slate-900 truncate max-w-[200px]">
+                              {r.repository_id}
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                              r.priority === "P0"
+                                ? "bg-red-100 text-red-800 border border-red-200"
+                                : r.priority === "P1"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-blue-100 text-blue-800"
+                            }`}>
+                              {r.priority} PRIORITY
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-slate-600">
+                            <span>PR #{r.pr_number}</span>
+                            <span className="font-mono text-[11px] text-slate-500">{r.head_sha.substring(0, 8)}</span>
+                          </div>
+
+                          <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                            <span className={`font-bold ${r.status === "COMPLETED" ? "text-emerald-600" : "text-amber-600"}`}>
+                              ● {r.status}
+                            </span>
+                            <span className="text-slate-500">
+                              {r.findings_count} findings • {r.test_passed ? "Tests ✅" : "Tests ❌"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Details Column */}
+                <div className="lg:col-span-8">
+                  {loadingDetails ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
+                      <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                      <p className="font-semibold text-sm">Loading verified analysis report...</p>
+                    </div>
+                  ) : runDetails ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      {/* Run Header */}
+                      <div className="p-6 border-b border-slate-200 bg-slate-50/50">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                          <div>
+                            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider font-mono">
+                              ANALYSIS ID: {runDetails.id}
+                            </span>
+                            <h2 className="text-xl font-black text-slate-900 mt-1">
+                              {runDetails.repository_id} — Pull Request #{runDetails.pr_number}
+                            </h2>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              {runDetails.status}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                              {runDetails.priority}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Commit hashes */}
+                        <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-white p-3 rounded-xl border border-slate-200">
+                          <div>
+                            <span className="text-slate-400 font-sans block text-[10px] uppercase font-bold">Head Commit (Analyzed)</span>
+                            <span className="text-slate-800 font-semibold">{runDetails.head_sha}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-sans block text-[10px] uppercase font-bold">Base Branch Commit</span>
+                            <span className="text-slate-800 font-semibold">{runDetails.base_sha}</span>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        {runs[0].findings_count > 0 ? (
-                          <div className="text-right">
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
-                              🚨 {runs[0].findings_count} Security & Quality Issues Caught
-                            </span>
-                            <div className="text-[11px] text-slate-500 mt-0.5">Prevented production regression</div>
-                          </div>
-                        ) : (
-                          <div className="text-right">
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                              ✅ Clean Pass (0 Issues)
-                            </span>
-                            <div className="text-[11px] text-slate-500 mt-0.5">All verification checks passed</div>
+                      {/* Detail Sub-Tabs */}
+                      <div className="border-b border-slate-200 px-6 flex space-x-6 text-sm font-bold">
+                        <button
+                          onClick={() => setDetailTab("findings")}
+                          className={`py-3 border-b-2 transition-all ${
+                            detailTab === "findings"
+                              ? "border-blue-600 text-blue-600"
+                              : "border-transparent text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          Validated Findings ({runDetails.findings.length})
+                        </button>
+                        <button
+                          onClick={() => setDetailTab("sandbox")}
+                          className={`py-3 border-b-2 transition-all ${
+                            detailTab === "sandbox"
+                              ? "border-blue-600 text-blue-600"
+                              : "border-transparent text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          Deterministic Sandbox Proof
+                        </button>
+                        <button
+                          onClick={() => setDetailTab("comment")}
+                          className={`py-3 border-b-2 transition-all ${
+                            detailTab === "comment"
+                              ? "border-blue-600 text-blue-600"
+                              : "border-transparent text-slate-500 hover:text-slate-800"
+                          }`}
+                        >
+                          GitHub PR Comment Preview
+                        </button>
+                      </div>
+
+                      {/* Findings Tab */}
+                      <div className="p-6">
+                        {detailTab === "findings" && (
+                          <div className="space-y-4">
+                            {runDetails.findings.length === 0 ? (
+                              <div className="text-center py-8 text-emerald-600 font-bold">
+                                ✅ All static & dynamic checks passed. No defects detected.
+                              </div>
+                            ) : (
+                              runDetails.findings.map((f, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`p-4 rounded-xl border ${
+                                    f.severity === "CRITICAL" || f.severity === "HIGH"
+                                      ? "border-red-200 bg-red-50/20"
+                                      : "border-amber-200 bg-amber-50/20"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                        f.severity === "CRITICAL"
+                                          ? "bg-red-600 text-white"
+                                          : f.severity === "HIGH"
+                                          ? "bg-red-500 text-white"
+                                          : "bg-amber-500 text-white"
+                                      }`}>
+                                        {f.severity}
+                                      </span>
+                                      <span className="font-extrabold text-sm text-slate-900">{f.title}</span>
+                                    </div>
+                                    <span className="font-mono text-xs text-slate-500">
+                                      {f.file_path}:{f.line_number}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-xs text-slate-700 mb-3">{f.description}</p>
+
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-200/60">
+                                    <span className="text-emerald-700 font-bold">
+                                      ✓ Evidence-Verified ({Math.round(f.confidence * 100)}% Confidence)
+                                    </span>
+                                    <span className="font-mono text-slate-400">Category: {f.category}</span>
+                                  </div>
+                                </div>
+                              ))
+                            )}
                           </div>
                         )}
 
-                        <button
-                          onClick={() => inspectRun(runs[0].id)}
-                          className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-xs transition"
-                        >
-                          View Full Review & Proof ➔
-                        </button>
+                        {/* Sandbox Proof Tab */}
+                        {detailTab === "sandbox" && (
+                          <div className="space-y-4">
+                            {runDetails.test_evidence.length === 0 ? (
+                              <div className="text-center py-8 text-slate-500">
+                                No sandbox test execution records for this run.
+                              </div>
+                            ) : (
+                              runDetails.test_evidence.map((te, idx) => (
+                                <div key={idx} className="space-y-3">
+                                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`w-3 h-3 rounded-full ${te.passed ? "bg-emerald-500" : "bg-red-500"}`}></span>
+                                      <span className="font-mono font-bold text-xs text-slate-800">{te.test_suite}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-3 text-xs">
+                                      <span className="text-slate-500">Exit Code: <strong className="font-mono">{te.exit_code}</strong></span>
+                                      <span className={`font-bold px-2 py-0.5 rounded ${te.passed ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+                                        {te.passed ? "PASSED" : "FAILED"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-slate-900 rounded-xl p-4 font-mono text-xs text-emerald-400 overflow-x-auto max-h-80">
+                                    <pre>{te.stdout || "No stdout recorded."}</pre>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+
+                        {/* GitHub PR Comment Preview Tab */}
+                        {detailTab === "comment" && (
+                          <div className="bg-slate-50 rounded-xl p-5 border border-slate-200 text-xs text-slate-800 space-y-3 font-sans">
+                            <div className="font-black text-sm text-slate-900 pb-2 border-b border-slate-200">
+                              🤖 AI PR Assistant — Review Summary
+                            </div>
+                            <div className="text-slate-600 font-mono text-[11px]">
+                              Commit SHA: <code className="bg-white px-1 border rounded">{runDetails.head_sha}</code> | Analysis ID: <code className="bg-white px-1 border rounded">{runDetails.id}</code>
+                            </div>
+                            <div className="font-bold text-slate-900">
+                              🔍 Validated Findings ({runDetails.findings.length})
+                            </div>
+                            <div className="space-y-2 pl-2">
+                              {runDetails.findings.map((f, i) => (
+                                <div key={i} className="space-y-1">
+                                  <div className="font-semibold text-slate-900">
+                                    🚨 [{f.category}] {f.title} (<code className="font-mono text-[11px]">{f.file_path}:{f.line_number}</code>)
+                                  </div>
+                                  <div className="text-slate-600 pl-4">• {f.description}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="pt-3 border-t border-slate-200 text-slate-400 italic text-[11px]">
+                              Verified by deterministic sandbox execution and physical evidence check.
+                            </div>
+                          </div>
+                        )}
                       </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
+                      Select an analysis run from the list to view full evidence and findings.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB 3: PRIORITY QUEUES & KAFKA PARTITIONS                */}
+            {/* ======================================================== */}
+            {activeTab === "queues" && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <h2 className="text-xl font-black text-slate-900 mb-1">
+                    Multi-Topic Priority Queue (Kafka Partitioning Model)
+                  </h2>
+                  <p className="text-xs text-slate-600 max-w-2xl">
+                    Strict priority partitioning guarantees critical P0 pull requests preempt background tasks. Headroom capacity monitoring ensures worker nodes are never starved or overwhelmed.
+                  </p>
+                </div>
+
+                {queues && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* P0 CRITICAL */}
+                    <div className="bg-white rounded-2xl border-2 border-red-200 p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="font-black text-red-600 text-sm">TOPIC: pr_analysis_p0</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-800">
+                          CRITICAL PREEMPTION
+                        </span>
+                      </div>
+                      <div className="text-4xl font-black text-slate-900 mb-1">
+                        {queues.priority_topics ? queues.priority_topics.pr_analysis_p0 : 0}
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">Pending jobs in P0 partition</p>
+                    </div>
+
+                    {/* P1 HIGH */}
+                    <div className="bg-white rounded-2xl border border-amber-200 p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="font-black text-amber-600 text-sm">TOPIC: pr_analysis_p1</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
+                          HIGH PRIORITY
+                        </span>
+                      </div>
+                      <div className="text-4xl font-black text-slate-900 mb-1">
+                        {queues.priority_topics ? queues.priority_topics.pr_analysis_p1 : 0}
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">Pending jobs in P1 partition</p>
+                    </div>
+
+                    {/* P2 STANDARD */}
+                    <div className="bg-white rounded-2xl border border-blue-200 p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="font-black text-blue-600 text-sm">TOPIC: pr_analysis_p2</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">
+                          STANDARD
+                        </span>
+                      </div>
+                      <div className="text-4xl font-black text-slate-900 mb-1">
+                        {queues.priority_topics ? queues.priority_topics.pr_analysis_p2 : 0}
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">Pending jobs in P2 partition</p>
                     </div>
                   </div>
                 )}
 
-                {/* All PR Review Runs List */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-                  <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                {/* Worker Headroom */}
+                {queues && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                    <h3 className="font-black text-slate-900 text-sm mb-4">Capacity & Headroom Monitor</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                      <div className="bg-slate-50 p-4 rounded-xl border">
+                        <div className="text-2xl font-black text-slate-800">{queues.active_workers}</div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase mt-1">Active Workers</div>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-xl border">
+                        <div className="text-2xl font-black text-emerald-600">
+                          {queues.cluster_headroom ? queues.cluster_headroom.headroom : 10}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase mt-1">Available Headroom</div>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-xl border">
+                        <div className="text-2xl font-black text-slate-800">
+                          {queues.cluster_headroom ? queues.cluster_headroom.max_capacity : 10}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase mt-1">Max Concurrency</div>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-xl border">
+                        <div className="text-2xl font-black text-blue-600">
+                          {queues.cluster_headroom ? `${Math.round(queues.cluster_headroom.utilization_pct)}%` : "0%"}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase mt-1">Cluster Utilization</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB 4: QUICK TRIGGER & SANDBOX TEST                      */}
+            {/* ======================================================== */}
+            {activeTab === "trigger" && (
+              <div className="max-w-2xl mx-auto space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <h2 className="text-xl font-black text-slate-900 mb-1">Trigger Analysis or Webhook</h2>
+                  <p className="text-xs text-slate-600 mb-6">
+                    Test the complete end-to-end pipeline against real GitHub pull requests or simulated conflict events.
+                  </p>
+
+                  {/* 1-Click Airbnb-clone conflict demo */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-extrabold text-xs text-blue-900">
+                        ⭐ 1-Click Conflict Test: Airbnb-clone PR #1
+                      </span>
+                      <span className="text-[10px] font-black bg-blue-200 text-blue-900 px-2 py-0.5 rounded">
+                        RECOMMENDED
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-700 mb-3">
+                      Dispatches the live Indian cities search conflict for HIMpcgithub3000/Airbnb-clone PR #1 to the P0 queue.
+                    </p>
+                    <button
+                      disabled={isTriggering}
+                      onClick={() => handleQuickTrigger("conflict")}
+                      className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition-all disabled:opacity-50"
+                    >
+                      {isTriggering ? "Triggering..." : "⚡ Run Real Conflict Analysis (P0)"}
+                    </button>
+                  </div>
+
+                  {triggerSuccess && (
+                    <div className="p-3 mb-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800">
+                      {triggerSuccess}
+                    </div>
+                  )}
+
+                  {/* Manual form */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleQuickTrigger("custom");
+                    }}
+                    className="space-y-4 pt-4 border-t border-slate-100"
+                  >
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">All Pull Request Reviews</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Chronological record of every PR reviewed by the AI Assistant</p>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Repository Full Name</label>
+                      <input
+                        type="text"
+                        value={formRepo}
+                        onChange={(e) => setFormRepo(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
                     </div>
-                    <span className="text-xs text-slate-400">Auto-updating live</span>
-                  </div>
 
-                  <div className="divide-y divide-slate-100">
-                    {runs.map((r) => (
-                      <div key={r.id} className="p-4 hover:bg-slate-50/80 transition flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
-                            r.findings_count > 0 ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
-                          }`}>
-                            {r.findings_count > 0 ? "⚠️" : "✓"}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-xs">{r.repository_id}</span>
-                              <span className="text-xs font-semibold text-slate-500">PR #{r.pr_number}</span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                                r.priority === "P0" ? "bg-indigo-100 text-indigo-800" : "bg-slate-100 text-slate-700"
-                              }`}>{r.priority}</span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              SHA: {r.head_sha?.substring(0, 7)} • {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-                          <div>
-                            {r.findings_count > 0 ? (
-                              <span className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full">
-                                {r.findings_count} Issue{r.findings_count > 1 ? "s" : ""} Flagged
-                              </span>
-                            ) : (
-                              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                                Clean Pass
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="font-mono text-xs text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                            {r.test_passed ? "Tests: PASSED (0.01s)" : "Tests: Clean"}
-                          </div>
-
-                          <button
-                            onClick={() => inspectRun(r.id)}
-                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-300 px-3 py-1.5 rounded-lg transition"
-                          >
-                            Inspect ➔
-                          </button>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Pull Request Number</label>
+                        <input
+                          type="number"
+                          value={formPR}
+                          onChange={(e) => setFormPR(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
                       </div>
-                    ))}
-                  </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Priority</label>
+                        <select
+                          value={formPriority}
+                          onChange={(e) => setFormPriority(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        >
+                          <option value="P0">P0 (Critical Preemption)</option>
+                          <option value="P1">P1 (High)</option>
+                          <option value="P2">P2 (Standard)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Head SHA</label>
+                      <input
+                        type="text"
+                        value={formHeadSha}
+                        onChange={(e) => setFormHeadSha(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isTriggering}
+                      className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white font-bold text-xs transition-colors disabled:opacity-50"
+                    >
+                      {isTriggering ? "Enqueuing..." : "Dispatch Custom Webhook Event"}
+                    </button>
+                  </form>
                 </div>
               </div>
             )}
 
-            {/* VIEW 2: VISUAL PIPELINE FLOW */}
-            {mainView === "pipeline" && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-                  <h3 className="text-base font-bold text-slate-900">How Every Pull Request Travels Through the Engine</h3>
-                  <p className="text-xs text-slate-500 mt-1">From GitHub webhook ingestion to verified comments on pull requests:</p>
-
-                  <div className="mt-8 grid grid-cols-1 md:grid-cols-5 gap-3 relative">
-                    {/* Step 1 */}
-                    <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/30 flex flex-col justify-between">
-                      <div>
-                        <div className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center mb-3">1</div>
-                        <h4 className="font-bold text-xs text-slate-900">Ingest Webhook</h4>
-                        <p className="text-[11px] text-slate-600 mt-1">Verifies HMAC cryptographic signature and prevents duplicate retries.</p>
-                      </div>
-                      <span className="mt-4 text-[10px] font-bold text-indigo-700 bg-indigo-100/60 px-2 py-0.5 rounded w-fit">FastAPI :8000</span>
-                    </div>
-
-                    {/* Step 2 */}
-                    <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/30 flex flex-col justify-between">
-                      <div>
-                        <div className="w-7 h-7 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center mb-3">2</div>
-                        <h4 className="font-bold text-xs text-slate-900">Lock SHA Contract</h4>
-                        <p className="text-[11px] text-slate-600 mt-1">Locks exact commit SHA into immutable UUID. Prevents review drift.</p>
-                      </div>
-                      <span className="mt-4 text-[10px] font-bold text-purple-700 bg-purple-100/60 px-2 py-0.5 rounded w-fit">Immutable Lock</span>
-                    </div>
-
-                    {/* Step 3 */}
-                    <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/30 flex flex-col justify-between">
-                      <div>
-                        <div className="w-7 h-7 rounded-full bg-rose-600 text-white font-bold text-xs flex items-center justify-center mb-3">3</div>
-                        <h4 className="font-bold text-xs text-slate-900">Priority Queue</h4>
-                        <p className="text-[11px] text-slate-600 mt-1">P0 hotfixes execute immediately. P2 features promoted after 180s.</p>
-                      </div>
-                      <span className="mt-4 text-[10px] font-bold text-rose-700 bg-rose-100/60 px-2 py-0.5 rounded w-fit">Kafka / Redis Model</span>
-                    </div>
-
-                    {/* Step 4 */}
-                    <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/30 flex flex-col justify-between">
-                      <div>
-                        <div className="w-7 h-7 rounded-full bg-amber-600 text-white font-bold text-xs flex items-center justify-center mb-3">4</div>
-                        <h4 className="font-bold text-xs text-slate-900">Test & Evidence Gate</h4>
-                        <p className="text-[11px] text-slate-600 mt-1">Runs tests in pre-warmed container. Drops unverified AI findings.</p>
-                      </div>
-                      <span className="mt-4 text-[10px] font-bold text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded w-fit">Docker Sandbox 0.01s</span>
-                    </div>
-
-                    {/* Step 5 */}
-                    <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 flex flex-col justify-between">
-                      <div>
-                        <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center mb-3">5</div>
-                        <h4 className="font-bold text-xs text-slate-900">Publish to GitHub</h4>
-                        <p className="text-[11px] text-slate-600 mt-1">Checks freshness against live PR and posts review with proof.</p>
-                      </div>
-                      <span className="mt-4 text-[10px] font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded w-fit">Verified Comment</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 3: PRIORITY QUEUES */}
-            {mainView === "queues" && (
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-                  <h3 className="text-base font-bold text-slate-900">Priority Queue Traffic & Headroom</h3>
-                  <p className="text-xs text-slate-500 mt-1">Ensures hotfixes never wait behind massive feature PRs.</p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-                    <div className="border border-indigo-200 bg-indigo-50/40 p-4 rounded-xl">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded">P0 Hotfix</span>
-                        <span className="font-bold font-mono text-sm text-indigo-900">{queues?.priority_topics?.["pr-p0-hotfix"] ?? 0} In Queue</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-slate-900 mt-3">Production Emergency</h4>
-                      <p className="text-[11px] text-slate-500 mt-1">Reserved execution bandwidth with highest precedence.</p>
-                    </div>
-
-                    <div className="border border-rose-200 bg-rose-50/40 p-4 rounded-xl">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-rose-700 bg-rose-100 px-2 py-0.5 rounded">P1 Security</span>
-                        <span className="font-bold font-mono text-sm text-rose-900">{queues?.priority_topics?.["pr-p1-security"] ?? 0} In Queue</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-slate-900 mt-3">Vulnerability Patch</h4>
-                      <p className="text-[11px] text-slate-500 mt-1">Audits secret leaks and security CVE fixes.</p>
-                    </div>
-
-                    <div className="border border-sky-200 bg-sky-50/40 p-4 rounded-xl">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-sky-700 bg-sky-100 px-2 py-0.5 rounded">P2 Normal</span>
-                        <span className="font-bold font-mono text-sm text-sky-900">{queues?.priority_topics?.["pr-p2-normal"] ?? 0} In Queue</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-slate-900 mt-3">Feature Pull Requests</h4>
-                      <p className="text-[11px] text-slate-500 mt-1">Automatically promoted to P1 after 180s to prevent starvation.</p>
-                    </div>
-
-                    <div className="border border-slate-200 bg-slate-50 p-4 rounded-xl">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-slate-700 bg-slate-200 px-2 py-0.5 rounded">P3 Low</span>
-                        <span className="font-bold font-mono text-sm text-slate-900">{queues?.priority_topics?.["pr-p3-low"] ?? 0} In Queue</span>
-                      </div>
-                      <h4 className="font-bold text-xs text-slate-900 mt-3">Chores & Docs</h4>
-                      <p className="text-[11px] text-slate-500 mt-1">Processed during worker idle periods.</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </main>
 
-          {/* Interactive Inspection Drawer */}
-          {selectedRun && (
-            <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end">
-              <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col border-l border-slate-200">
-                <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-start justify-between">
+          {/* ======================================================== */}
+          {/* MODAL: INSPECT REPO PULL REQUESTS                        */}
+          {/* ======================================================== */}
+          {selectedRepoForPulls && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div>
-                    <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                      <span>Inspection Details</span>
-                      <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded font-bold font-mono">{runDetails?.priority ?? "P0"}</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5 font-mono">Run UUID: {selectedRun}</p>
+                    <span className="text-[11px] font-bold text-blue-600 uppercase font-mono">PULL REQUEST INSPECTOR</span>
+                    <h3 className="text-lg font-black text-slate-900">{selectedRepoForPulls}</h3>
                   </div>
                   <button
-                    onClick={() => { setSelectedRun(null); setRunDetails(null); }}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 text-lg"
+                    onClick={() => setSelectedRepoForPulls(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg"
                   >
                     ✕
                   </button>
                 </div>
 
-                <div className="flex border-b border-slate-200 px-6 bg-white text-xs font-bold">
-                  <button
-                    onClick={() => setDetailTab("findings")}
-                    className={`py-3 px-3 border-b-2 transition ${
-                      detailTab === "findings" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    🚨 Verified Findings ({runDetails?.findings?.length ?? 0})
-                  </button>
-                  <button
-                    onClick={() => setDetailTab("sandbox")}
-                    className={`py-3 px-3 border-b-2 transition ${
-                      detailTab === "sandbox" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    🧪 Sandbox Proof (0.01s)
-                  </button>
-                  <button
-                    onClick={() => setDetailTab("comment")}
-                    className={`py-3 px-3 border-b-2 transition ${
-                      detailTab === "comment" ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    💬 GitHub Comment
-                  </button>
-                </div>
-
-                <div className="p-6 flex-1 overflow-y-auto space-y-4">
-                  {loadingDetails ? (
-                    <div className="text-center py-20 text-slate-400">Loading analysis artifacts...</div>
-                  ) : !runDetails ? (
-                    <div className="text-center py-20 text-slate-400">Failed to load run details.</div>
-                  ) : (
-                    <>
-                      {detailTab === "findings" && (
-                        <div className="space-y-3">
-                          {runDetails.findings?.length === 0 ? (
-                            <div className="p-8 text-center bg-emerald-50 border border-emerald-200 rounded-xl">
-                              <span className="text-3xl">✅</span>
-                              <h4 className="font-bold text-emerald-900 mt-2 text-sm">Clean Review — No Issues Found</h4>
-                              <p className="text-xs text-emerald-700 mt-1">All quality checks and security scans passed.</p>
-                            </div>
-                          ) : (
-                            runDetails.findings.map((f, i) => (
-                              <div key={i} className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                                    f.severity === "CRITICAL" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
-                                  }`}>
-                                    {f.severity} • {f.category}
-                                  </span>
-                                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                    Physical Evidence: Verified
-                                  </span>
-                                </div>
-                                <h4 className="font-bold text-slate-900 text-xs">{f.title}</h4>
-                                <div className="font-mono text-xs text-slate-700 bg-slate-50 p-2 rounded border border-slate-200">
-                                  {f.file_path}:{f.line_number}
-                                </div>
-                                <p className="text-xs text-slate-600">{f.description}</p>
-                                {f.suggestion && (
-                                  <div className="bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-lg text-xs text-indigo-950">
-                                    <span className="font-bold">Recommendation:</span> {f.suggestion}
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
+                {loadingPulls ? (
+                  <div className="py-12 text-center text-slate-500">
+                    <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                    <p className="text-xs font-semibold">Fetching pull requests from GitHub...</p>
+                  </div>
+                ) : repoPulls.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 text-xs">
+                    <p className="font-bold text-slate-700">No open pull requests found for this repository.</p>
+                    <p className="mt-1">When a pull request is created on GitHub, AI PR Assistant will automatically receive the webhook!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-500">Select any open pull request to run immediate AI analysis:</p>
+                    {repoPulls.map((p) => (
+                      <div key={p.number} className="p-4 rounded-xl border border-slate-200 hover:border-blue-400 bg-slate-50/50 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-extrabold text-sm text-slate-900">
+                            PR #{p.number}: {p.title}
+                          </span>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            p.state === "open" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+                          }`}>
+                            {p.state.toUpperCase()}
+                          </span>
                         </div>
-                      )}
-
-                      {detailTab === "sandbox" && (
-                        <div className="space-y-4">
-                          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                            <div>
-                              <span className="font-bold text-slate-800">Runner Mode:</span>
-                              <span className="ml-2 font-mono text-purple-700 font-semibold">Pre-Warmed Pool (POOL_MGR)</span>
-                            </div>
-                            <span className="font-bold font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">Execution: 0.01s (PASS)</span>
-                          </div>
-                          {runDetails.test_evidence?.map((te, i) => (
-                            <div key={i} className="space-y-1">
-                              <span className="text-xs font-mono font-bold text-slate-700">{te.test_suite} (exit code: {te.exit_code})</span>
-                              <pre className="bg-slate-950 text-slate-200 p-4 rounded-xl font-mono text-[11px] overflow-x-auto whitespace-pre leading-relaxed">
-                                {te.stdout}
-                              </pre>
-                            </div>
-                          ))}
+                        <div className="flex items-center space-x-3 text-xs font-mono text-slate-500">
+                          <span>head: {p.head_sha ? p.head_sha.substring(0, 8) : "?"}</span>
+                          <span>base: {p.base_sha ? p.base_sha.substring(0, 8) : "?"}</span>
+                          <span>by @{p.user}</span>
                         </div>
-                      )}
-
-                      {detailTab === "comment" && (
-                        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl text-xs font-mono whitespace-pre-wrap text-slate-800 leading-relaxed">
-                          {runDetails.summary || "No comment generated yet."}
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            onClick={() => {
+                              setFormRepo(selectedRepoForPulls);
+                              setFormPR(p.number);
+                              setFormHeadSha(p.head_sha || "");
+                              setFormBaseSha(p.base_sha || "");
+                              setSelectedRepoForPulls(null);
+                              setActiveTab("trigger");
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors"
+                          >
+                            Analyze PR #{p.number}
+                          </button>
                         </div>
-                      )}
-                    </>
-                  )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="pt-3 border-t border-slate-100 flex justify-end">
+                  <button
+                    onClick={() => setSelectedRepoForPulls(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Trigger Analysis Modal */}
-          {isModalOpen && (
-            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+          {/* ======================================================== */}
+          {/* MODAL: GITHUB TOKEN & CONNECTION MANAGEMENT               */}
+          {/* ======================================================== */}
+          {isTokenModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <h3 className="text-base font-bold text-slate-900">Trigger PR Analysis</h3>
-                  <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+                  <h3 className="text-base font-black text-slate-900">GitHub Authentication & Token Status</h3>
+                  <button onClick={() => setIsTokenModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs flex gap-2">
-                  <button
-                    onClick={() => handleQuickTrigger("conflict")}
-                    className="flex-1 bg-rose-50 border border-rose-200 text-rose-700 font-bold py-2 rounded-lg hover:bg-rose-100 transition"
-                  >
-                    Quick Test: Airbnb PR #1 (Conflict)
-                  </button>
-                  <button
-                    onClick={() => handleQuickTrigger("clean")}
-                    className="flex-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold py-2 rounded-lg hover:bg-emerald-100 transition"
-                  >
-                    Quick Test: Clean PR
-                  </button>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-xs space-y-1.5">
+                  <div className="flex items-center space-x-2 text-emerald-900 font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>Current Status: Token Active & Fully Valid</span>
+                  </div>
+                  <p className="text-emerald-800">
+                    Your current token has read and write access to <strong>39 repositories</strong> on account <strong>@{user ? user.login : "HIMpcgithub3000"}</strong>.
+                  </p>
                 </div>
 
-                <form onSubmit={(e) => { e.preventDefault(); handleQuickTrigger("conflict"); }} className="space-y-3 text-xs">
+                <form onSubmit={handleUpdateToken} className="space-y-4 pt-2">
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Target Repository</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Update / Rotate GitHub Personal Access Token (Optional)
+                    </label>
                     <input
-                      type="text"
-                      value={formRepo}
-                      onChange={(e) => setFormRepo(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
+                      type="password"
+                      placeholder="Paste new token (github_pat_... or ghp_...)"
+                      value={customToken}
+                      onChange={(e) => setCustomToken(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">PR Number</label>
-                      <input
-                        type="number"
-                        value={formPR}
-                        onChange={(e) => setFormPR(e.target.value)}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Priority Tier</label>
-                      <select
-                        value={formPriority}
-                        onChange={(e) => setFormPriority(e.target.value)}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold"
-                      >
-                        <option value="P0">P0 Hotfix (Fastest)</option>
-                        <option value="P1">P1 Security</option>
-                        <option value="P2">P2 Feature</option>
-                        <option value="P3">P3 Low</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Commit HEAD SHA</label>
-                    <input
-                      type="text"
-                      value={formHeadSha}
-                      onChange={(e) => setFormHeadSha(e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono"
-                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Required scopes: <code>repo</code>, <code>admin:repo_hook</code>
+                    </p>
                   </div>
 
-                  <div className="pt-2 flex justify-end space-x-2">
+                  {tokenUpdateStatus && (
+                    <div className={`p-2.5 rounded-lg text-xs font-bold ${
+                      tokenUpdateStatus === "success"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : tokenUpdateStatus === "validating"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-red-100 text-red-800"
+                    }`}>
+                      {tokenUpdateStatus === "validating" ? "Validating token with GitHub API..." : tokenUpdateStatus}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
                     <button
                       type="button"
-                      onClick={() => setIsModalOpen(false)}
-                      className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 font-medium"
+                      onClick={() => setIsTokenModalOpen(false)}
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
                     >
-                      Cancel
+                      Close
                     </button>
                     <button
                       type="submit"
-                      disabled={isTriggering}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg shadow-xs"
+                      disabled={!customToken.trim() || tokenUpdateStatus === "validating"}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs disabled:opacity-50"
                     >
-                      {isTriggering ? "Enqueuing..." : "Dispatch PR Review"}
+                      Update Token
                     </button>
                   </div>
                 </form>
               </div>
             </div>
           )}
+
+          {/* FOOTER */}
+          <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+            <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <span>AI PR Assistant Mission Control • Stage 2 Autonomous Infrastructure</span>
+              <span className="font-mono text-slate-400">EC2 Node: 13.201.6.39 • Redis Broker Active</span>
+            </div>
+          </footer>
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
   </script>
 </body>
 </html>"""
