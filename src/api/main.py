@@ -301,9 +301,10 @@ async def github_webhook_endpoint(
 
             # Priority assignment based on labels or title
             labels = [l.get("name", "").lower() for l in pr_data.get("labels", [])]
-            if "hotfix" in labels or "p0" in labels:
+            pr_title = pr_data.get("title", "").lower()
+            if "hotfix" in labels or "p0" in labels or "p0" in pr_title or "conflict" in pr_title:
                 priority = "P0"
-            elif "security" in labels or "p1" in labels:
+            elif "security" in labels or "p1" in labels or "p1" in pr_title:
                 priority = "P1"
             else:
                 priority = "P2"
