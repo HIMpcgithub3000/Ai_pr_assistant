@@ -11,6 +11,7 @@ from src.db.models import AnalysisFinding, AnalysisRun, TestEvidence
 from src.db.write_queue import AsyncWriteQueue
 from src.sandbox.runner import DockerTestSandbox
 from src.services.evidence_validator import EvidenceValidator
+from src.services.feedback_buffer import HumanReviewFeedbackBuffer
 from src.services.freshness_checker import FreshnessChecker
 from src.services.git_manager import GitManager
 from src.services.github_client import GitHubClient
@@ -28,6 +29,10 @@ class PRAnalysisProcessor:
     - Agent Circuit Breakers (CIRCUIT_BREAKER) with degraded fallback
     - Partial Artifact Salvage Gate (SALVAGE_GATE) on stale runs
     - Micro-batched async write queue for high throughput
+    Stage 3 Enhancements:
+    - Closed-Loop Human Review Feedback Buffer (Confidence Calibration)
+    - Speculative Merge Simulation
+    - Codebase Reindexing
     """
 
     def __init__(self):
@@ -41,6 +46,7 @@ class PRAnalysisProcessor:
         self.circuit_breaker = AgentCircuitBreaker()
         self.salvage_gate = SalvageGateService()
         self.write_queue = AsyncWriteQueue()
+        self.feedback_buffer = HumanReviewFeedbackBuffer()
 
     async def process_analysis_run(
         self,
@@ -182,6 +188,13 @@ class PRAnalysisProcessor:
             validated_findings = self.evidence_validator.filter_and_validate(
                 checkout_dir=target_dir,
                 raw_findings=raw_findings,
+            )
+
+            # Stage 3: Closed-Loop Human Review Feedback Calibration
+            validated_findings = await self.feedback_buffer.calibrate_findings(
+                db=db,
+                repository_id=repo_id,
+                findings=validated_findings,
             )
 
             # Persist findings to PostgreSQL

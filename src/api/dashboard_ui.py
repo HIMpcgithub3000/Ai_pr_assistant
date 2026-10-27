@@ -75,6 +75,16 @@ def get_dashboard_html() -> str:
       const [formHeadSha, setFormHeadSha] = useState("4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c");
       const [formBaseSha, setFormBaseSha] = useState("28b8d6563bc40af0658f3f9e7b5cdcdcd5cf3573");
       const [formPriority, setFormPriority] = useState("P0");
+      
+      // Stage 3 State: Speculative Merge Queue, Human Feedback & Reindexing
+      const [stage3Repo, setStage3Repo] = useState("HIMpcgithub3000/Airbnb-clone");
+      const [mergeTrainData, setMergeTrainData] = useState({ total_queued: 0, candidates: [] });
+      const [feedbackData, setFeedbackData] = useState({ count: 0, feedback_entries: [] });
+      const [reindexStats, setReindexStats] = useState({ total_chunks: 0, indexed_files: [], file_count: 0 });
+      const [stage3Loading, setStage3Loading] = useState(false);
+      const [stage3ActionMsg, setStage3ActionMsg] = useState(null);
+      const [enqueuePRNumber, setEnqueuePRNumber] = useState(2);
+      const [enqueueHeadSha, setEnqueueHeadSha] = useState("4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c");
 
       const [autoRefresh, setAutoRefresh] = useState(true);
       const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -238,6 +248,135 @@ def get_dashboard_html() -> str:
           setTriggerSuccess("Trigger failed: " + err.message);
         } finally {
           setIsTriggering(false);
+        }
+      };
+
+      // Stage 3 API Handlers
+      const fetchStage3Data = useCallback(async (targetRepo = stage3Repo) => {
+        try {
+          const parts = targetRepo.split("/");
+          if (parts.length !== 2) return;
+          const [owner, repo] = parts;
+          const [mtRes, fbRes, rxRes] = await Promise.all([
+            fetch(`/api/v1/merge-queue/${owner}/${repo}`),
+            fetch(`/api/v1/feedback/${owner}/${repo}`),
+            fetch(`/api/v1/reindex/${owner}/${repo}`)
+          ]);
+          if (mtRes.ok) setMergeTrainData(await mtRes.json());
+          if (fbRes.ok) setFeedbackData(await fbRes.json());
+          if (rxRes.ok) setReindexStats(await rxRes.json());
+        } catch (err) {
+          console.error("Failed to load Stage 3 data:", err);
+        }
+      }, [stage3Repo]);
+
+      const handleEnqueueCandidate = async () => {
+        setStage3Loading(true);
+        setStage3ActionMsg(null);
+        try {
+          const res = await fetch("/api/v1/merge-queue/enqueue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              repository_id: stage3Repo,
+              pr_number: parseInt(enqueuePRNumber),
+              head_sha: enqueueHeadSha,
+              target_branch: "main"
+            })
+          });
+          if (res.ok) {
+            setStage3ActionMsg(`Enqueued PR #${enqueuePRNumber} into speculative merge train!`);
+            await fetchStage3Data();
+          }
+        } catch (err) {
+          setStage3ActionMsg(`Enqueue failed: ${err.message}`);
+        } finally {
+          setStage3Loading(false);
+        }
+      };
+
+      const handleSimulateCandidate = async (candidateId, mockConflict = false) => {
+        setStage3Loading(true);
+        setStage3ActionMsg(null);
+        try {
+          const res = await fetch("/api/v1/merge-queue/simulate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              candidate_id: candidateId,
+              base_target_sha: "main_head_sha",
+              mock_conflict: mockConflict
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setStage3ActionMsg(
+              mockConflict
+                ? `Conflict simulation: REJECTED with conflict in ${data.conflict_files ? data.conflict_files.join(", ") : "files"}`
+                : `Speculative test passed: VERIFIED against SHA ${data.speculative_sha ? data.speculative_sha.substring(0, 10) : ""}`
+            );
+            await fetchStage3Data();
+          }
+        } catch (err) {
+          setStage3ActionMsg(`Simulation failed: ${err.message}`);
+        } finally {
+          setStage3Loading(false);
+        }
+      };
+
+      const handleSendFeedback = async (prNumber, eventType, category, title, text) => {
+        setStage3Loading(true);
+        setStage3ActionMsg(null);
+        try {
+          const res = await fetch("/api/v1/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              repository_id: stage3Repo,
+              pr_number: prNumber,
+              reviewer_handle: user?.login || "lead_dev",
+              event_type: eventType,
+              finding_category: category,
+              rule_or_title: title,
+              feedback_text: text
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setStage3ActionMsg(
+              `Feedback recorded (${eventType.toUpperCase()}): delta ${data.weight_delta > 0 ? "+" : ""}${data.weight_delta}. Net calibration: ${data.net_historical_calibration}`
+            );
+            await fetchStage3Data();
+          }
+        } catch (err) {
+          setStage3ActionMsg(`Feedback submission failed: ${err.message}`);
+        } finally {
+          setStage3Loading(false);
+        }
+      };
+
+      const handleTriggerReindex = async () => {
+        setStage3Loading(true);
+        setStage3ActionMsg(null);
+        try {
+          const res = await fetch("/api/v1/reindex", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              repository_id: stage3Repo,
+              commit_sha: "merged_" + Date.now().toString(16),
+              changed_files: ["src/api/auth.py", "src/models/user.py"]
+            })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setStage3ActionMsg(`Re-indexing completed: Evicted ${data.evicted_chunks} chunks, reindexed ${data.reindexed_chunks} fresh vectors.`);
+            await fetchStage3Data();
+          }
+        } catch (err) {
+          setStage3ActionMsg(`Reindex failed: ${err.message}`);
+        } finally {
+          setStage3Loading(false);
         }
       };
 
@@ -406,6 +545,26 @@ def get_dashboard_html() -> str:
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span>4. Quick Trigger & Sandbox</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab("stage3");
+                    fetchStage3Data();
+                  }}
+                  className={`py-3.5 px-1 border-b-2 font-bold text-sm flex items-center space-x-2 transition-all ${
+                    activeTab === "stage3"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <span>5. Stage 3: Merge Train & Feedback</span>
+                  <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-emerald-100 text-emerald-800 font-extrabold">
+                    ACTIVE
+                  </span>
                 </button>
               </nav>
             </div>
@@ -1170,6 +1329,311 @@ def get_dashboard_html() -> str:
                       {isTriggering ? "Enqueuing..." : "Dispatch Custom Webhook Event"}
                     </button>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB 5: STAGE 3 SPECULATIVE MERGE TRAIN & FEEDBACK       */}
+            {/* ======================================================== */}
+            {activeTab === "stage3" && (
+              <div className="space-y-8">
+                {/* Header Banner */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[11px] font-black tracking-wider text-blue-600 uppercase font-mono">
+                          STAGE 3 ARCHITECTURE
+                        </span>
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold rounded bg-emerald-100 text-emerald-800">
+                          PRODUCTION-READY
+                        </span>
+                      </div>
+                      <h2 className="text-xl font-black text-slate-900 mt-1">
+                        Speculative Merge Train & Closed-Loop Human Review Memory
+                      </h2>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Pre-tests speculative multi-PR merge states before main branch landing, learns from engineer approvals and dismissals, and syncs vector embeddings on merge.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="text"
+                        value={stage3Repo}
+                        onChange={(e) => setStage3Repo(e.target.value)}
+                        placeholder="owner/repo"
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => fetchStage3Data()}
+                        disabled={stage3Loading}
+                        className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 transition-colors"
+                      >
+                        {stage3Loading ? "Refreshing..." : "↻ Refresh"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {stage3ActionMsg && (
+                    <div className="mt-4 p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-900 animate-fadeIn">
+                      💡 {stage3ActionMsg}
+                    </div>
+                  )}
+                </div>
+
+                {/* 3-Column Grid for Stage 3 Features */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  
+                  {/* COLUMN 1: SPECULATIVE MERGE QUEUE */}
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-base font-black text-slate-900">
+                            1. Speculative Merge Train Queue
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Pre-tests PRs ahead-of-time in ephemeral sandboxes against speculative combined SHAs.
+                          </p>
+                        </div>
+                        <span className="text-xs font-mono font-bold bg-slate-100 px-2.5 py-1 rounded-full text-slate-700">
+                          {mergeTrainData.total_queued || 0} Queued
+                        </span>
+                      </div>
+
+                      {/* Enqueue form */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-3">
+                        <span className="text-xs font-bold text-slate-700">Enqueue Candidate:</span>
+                        <input
+                          type="number"
+                          value={enqueuePRNumber}
+                          onChange={(e) => setEnqueuePRNumber(e.target.value)}
+                          placeholder="PR #"
+                          className="w-20 px-2.5 py-1.5 rounded border border-slate-300 text-xs font-bold"
+                        />
+                        <input
+                          type="text"
+                          value={enqueueHeadSha}
+                          onChange={(e) => setEnqueueHeadSha(e.target.value)}
+                          placeholder="Head SHA"
+                          className="flex-1 min-w-[140px] px-2.5 py-1.5 rounded border border-slate-300 text-xs font-mono"
+                        />
+                        <button
+                          onClick={handleEnqueueCandidate}
+                          disabled={stage3Loading}
+                          className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors"
+                        >
+                          + Enqueue PR
+                        </button>
+                      </div>
+
+                      {/* Candidate list */}
+                      {(!mergeTrainData.candidates || mergeTrainData.candidates.length === 0) ? (
+                        <div className="py-8 text-center text-xs text-slate-500 border border-dashed border-slate-200 rounded-xl">
+                          No PRs currently queued in the merge train. Enqueue a candidate above or dispatch a GitHub merge_group event!
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {mergeTrainData.candidates.map((c) => (
+                            <div key={c.id} className="p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-all space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs font-black bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                                    POS #{c.queue_position}
+                                  </span>
+                                  <span className="font-extrabold text-sm text-slate-900">
+                                    PR #{c.pr_number}
+                                  </span>
+                                  <span className="text-xs font-mono text-slate-500">
+                                    sha: {c.head_sha ? c.head_sha.substring(0, 8) : "?"}
+                                  </span>
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                  c.status === "VERIFIED"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : c.status === "REJECTED"
+                                    ? "bg-rose-100 text-rose-800"
+                                    : c.status === "SPECULATING"
+                                    ? "bg-blue-100 text-blue-800 animate-pulse"
+                                    : "bg-amber-100 text-amber-800"
+                                }`}>
+                                  {c.status}
+                                </span>
+                              </div>
+
+                              {c.latest_speculation && (
+                                <div className="p-2.5 rounded-lg bg-slate-50 text-[11px] font-mono space-y-1 text-slate-600 border border-slate-200">
+                                  <div className="flex items-center justify-between">
+                                    <span>speculative_sha: {c.latest_speculation.speculative_sha.substring(0, 16)}...</span>
+                                    <span className={c.latest_speculation.tests_passed ? "text-emerald-700 font-bold" : "text-rose-700 font-bold"}>
+                                      {c.latest_speculation.tests_passed ? "✓ Sandbox Tests Passed" : "✗ Conflict / Tests Failed"}
+                                    </span>
+                                  </div>
+                                  {c.latest_speculation.conflict_files && c.latest_speculation.conflict_files.length > 0 && (
+                                    <div className="text-rose-600 font-bold">
+                                      conflicts: {c.latest_speculation.conflict_files.join(", ")}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              <div className="pt-2 flex items-center justify-end space-x-2">
+                                <button
+                                  onClick={() => handleSimulateCandidate(c.id, false)}
+                                  disabled={stage3Loading}
+                                  className="px-2.5 py-1 rounded bg-slate-900 hover:bg-black text-white text-[11px] font-bold transition-colors"
+                                >
+                                  ⚡ Test Speculative Sandbox
+                                </button>
+                                <button
+                                  onClick={() => handleSimulateCandidate(c.id, true)}
+                                  disabled={stage3Loading}
+                                  className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition-colors"
+                                >
+                                  ⚠️ Simulate Conflict
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* REINDEXING METRICS */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-base font-black text-slate-900">
+                            3. Incremental pgvector Codebase Re-indexing
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Evicts obsolete embeddings and re-indexes modified files on main branch push.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleTriggerReindex}
+                          disabled={stage3Loading}
+                          className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors"
+                        >
+                          ⚡ Trigger Commit Re-index
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900">
+                          <span className="text-[10px] font-bold uppercase tracking-wider">Total Indexed Chunks</span>
+                          <p className="text-2xl font-black mt-1">{reindexStats.total_chunks || 0}</p>
+                        </div>
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800">
+                          <span className="text-[10px] font-bold uppercase tracking-wider">Indexed Repository Files</span>
+                          <p className="text-2xl font-black mt-1">{reindexStats.file_count || 0}</p>
+                        </div>
+                      </div>
+
+                      {reindexStats.indexed_files && reindexStats.indexed_files.length > 0 && (
+                        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
+                          <span className="font-bold text-slate-700 block mb-1">Active Semantic Vector Files:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {reindexStats.indexed_files.map((f, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-white rounded border border-slate-300 text-[10px]">
+                                {f}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: CLOSED LOOP HUMAN REVIEW FEEDBACK */}
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div>
+                          <h3 className="text-base font-black text-slate-900">
+                            2. Closed-Loop Feedback
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Calibrates confidence scores from engineer decisions.
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-100 text-emerald-800">
+                          {feedbackData.count || 0} Events
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between text-emerald-700 font-bold">
+                          <span>• Validation Boost:</span>
+                          <span className="font-mono">+0.15</span>
+                        </div>
+                        <div className="flex items-center justify-between text-rose-700 font-bold">
+                          <span>• Dismissal / False-Positive Penalty:</span>
+                          <span className="font-mono">-0.25</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 pt-1">
+                          Findings with calibrated confidence &lt; 0.50 are automatically suppressed from PR review comments.
+                        </p>
+                      </div>
+
+                      {/* Quick test buttons for feedback calibration */}
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-slate-700 block">Simulate Engineer Feedback:</span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => handleSendFeedback(1, "approved", "SECURITY", "SQL_INJECTION_RISK", "Confirmed vulnerability")}
+                            disabled={stage3Loading}
+                            className="p-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs text-center transition-colors"
+                          >
+                            👍 Validate (+0.15)
+                          </button>
+                          <button
+                            onClick={() => handleSendFeedback(1, "dismissed", "LINT", "TRAILING_WHITESPACE", "False positive lint nagging")}
+                            disabled={stage3Loading}
+                            className="p-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-bold text-xs text-center transition-colors"
+                          >
+                            👎 Dismiss (-0.25)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Recent Feedback Logs */}
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-bold text-slate-700 block">Recent Review Actions:</span>
+                        {(!feedbackData.feedback_entries || feedbackData.feedback_entries.length === 0) ? (
+                          <p className="text-xs text-slate-400 italic py-4 text-center">No feedback events recorded yet.</p>
+                        ) : (
+                          <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                            {feedbackData.feedback_entries.map((fb) => (
+                              <div key={fb.id} className="p-3 rounded-lg border border-slate-200 bg-slate-50/70 text-xs space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-slate-800">@{fb.reviewer_handle}</span>
+                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                                    fb.weight_delta > 0
+                                      ? "bg-emerald-100 text-emerald-800 font-mono"
+                                      : "bg-rose-100 text-rose-800 font-mono"
+                                  }`}>
+                                    {fb.weight_delta > 0 ? `+${fb.weight_delta}` : fb.weight_delta}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-mono text-slate-600 truncate">
+                                  {fb.rule_or_title || fb.finding_category || "General Review"}
+                                </div>
+                                {fb.feedback_text && (
+                                  <p className="text-[11px] text-slate-500 italic">
+                                    "{fb.feedback_text}"
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             )}

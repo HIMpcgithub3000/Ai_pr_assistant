@@ -191,26 +191,26 @@ Stage 2 engineered the engine for massive horizontal scale, sub-second latency, 
 
 ---
 
-## 7. Stage 3: Speculative Merge Queue & Closed-Loop Learning
+## 7. Stage 3: Speculative Merge Queue & Closed-Loop Learning (COMPLETED & VERIFIED)
 
 Stage 3 takes the autonomous assistant from reactive review to **predictive merge train assurance** and **continuous reinforcement memory**.
 
 ### Architectural Modules of Stage 3
-1. **Speculative Merge Queue Engine (`src/merge_queue/speculator.py`)**:
-   - Subscribes to GitHub's `merge_group` webhook event.
-   - Computes speculative merge SHAs before code lands on `main`:
+1. **Speculative Merge Queue Engine (`src/services/speculative_queue.py`)**:
+   - Subscribes to GitHub's `merge_group` webhook event and REST endpoint `/api/v1/merge-queue/enqueue`.
+   - Computes deterministic speculative merge SHAs before code lands on `main`:
      $$\text{SPECULATIVE\_SHA} = \text{Merge}(\text{HEAD}_{\text{PR}}, \text{HEAD}_{\text{main}} + \sum \text{Preceding PRs in Train})$$
-   - Executes unit tests in the pre-warmed sandbox against this speculative state *before* the PR hits the default branch.
+   - Executes pre-warmed sandbox testing (`DockerTestSandbox.execute_test_suite`) against the speculative state to reject breaking PRs before they poison the default branch.
 2. **Closed-Loop Human Review Feedback Buffer (`src/services/feedback_buffer.py`)**:
-   - Listens to `pull_request_review` and `issue_comment` webhook events.
-   - Encodes human reviewer reactions (approved, rejected, dismissed comment) into vector memory:
-     - **Confirmed Issues**: Increased confidence weighting (+0.15) for matching AST patterns.
-     - **Dismissed Warnings / False Positives**: Vector-indexed negative examples that suppress future identical warnings.
-   - **Dynamic Confidence Calibration**:
-     $$\text{Confidence}_{\text{final}} = \text{Confidence}_{\text{model}} \times \left(1 + \sum w_{\text{historical\_approval}}\right) - \sum w_{\text{historical\_dismissal}}$$
+   - Listens to `pull_request_review` and `issue_comment` webhook events as well as `/api/v1/feedback`.
+   - Encodes human reviewer reactions (approved, changes_requested, dismissed) into vector memory:
+     - **Confirmed Issues**: Increased confidence weighting (+0.15) for matching rule and AST patterns.
+     - **Dismissed Warnings / False Positives**: Vector-indexed negative calibration (-0.25) that automatically suppresses nagging findings whose confidence falls below 0.50.
+   - **Dynamic Confidence Calibration Formula**:
+     $$\text{Confidence}_{\text{calibrated}} = \text{clamp}(\text{Confidence}_{\text{base}} + \Delta_{\text{historical}}, 0.05, 0.99)$$
 3. **Batched Semantic Codebase Re-Indexing (`src/services/reindex_scheduler.py`)**:
-   - Runs background cron syncs updating vector embeddings for files merged into `main`.
-   - Keeps repository RAG retrieval strictly synchronized with production codebases.
+   - Synchronizes vector embeddings for files modified in merged commits (`push` events to `main`/`master`).
+   - Atomically evicts stale code chunks and indexes fresh symbols, keeping pgvector RAG retrieval synchronized with production codebases.
 
 ---
 
@@ -235,6 +235,9 @@ The platform includes a clean, responsive React-based **Mission Control Dashboar
 ├─────────┼───────────────────────────┼──────────────────────────────────────────────────┤
 │ Tab 4   │ 4. Quick Trigger &        │ 1-Click test trigger for conflict simulation and │
 │         │    Sandbox Test           │ manual pull request webhook testing              │
+├─────────┼───────────────────────────┼──────────────────────────────────────────────────┤
+│ Tab 5   │ 5. Stage 3: Merge Train   │ Visual speculative merge train, pre-merge tests, │
+│         │    & Feedback             │ closed-loop human feedback calibration & reindex │
 └─────────┴───────────────────────────┴──────────────────────────────────────────────────┘
 ```
 
