@@ -102,3 +102,76 @@ class CodeEmbedding(Base):
     chunk_content: Mapped[str] = mapped_column(Text)
     symbol_context: Mapped[str | None] = mapped_column(String, nullable=True)
     embedding = mapped_column(Vector(1536), nullable=True)
+
+
+class MergeTrainCandidate(Base):
+    """
+    Stage 3: Tracks pull requests enqueued in the speculative merge queue train.
+    """
+    __tablename__ = "merge_train_candidates"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id: Mapped[str] = mapped_column(String, index=True)
+    pr_number: Mapped[int] = mapped_column(Integer, index=True)
+    head_sha: Mapped[str] = mapped_column(String(64), index=True)
+    target_branch: Mapped[str] = mapped_column(String(64), default="main")
+
+    queue_position: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(
+        String(30), default="ENQUEUED"
+    )  # ENQUEUED, SPECULATING, VERIFIED, MERGED, REJECTED, EVICTED
+
+    enqueued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    speculative_results: Mapped[list["SpeculativeMergeResult"]] = relationship(
+        "SpeculativeMergeResult", back_populates="candidate", cascade="all, delete-orphan"
+    )
+
+
+class SpeculativeMergeResult(Base):
+    """
+    Stage 3: Records the pre-merge speculative simulation and sandbox execution results.
+    """
+    __tablename__ = "speculative_merge_results"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    candidate_id: Mapped[str] = mapped_column(String, ForeignKey("merge_train_candidates.id"), index=True)
+
+    speculative_sha: Mapped[str] = mapped_column(String(64), index=True)
+    base_target_sha: Mapped[str] = mapped_column(String(64))
+    preceding_shas: Mapped[list] = mapped_column(JSON, default=list)
+
+    mergeable: Mapped[bool] = mapped_column(Boolean, default=True)
+    conflict_files: Mapped[list] = mapped_column(JSON, default=list)
+    tests_passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    test_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exit_code: Mapped[int] = mapped_column(Integer, default=0)
+
+    simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    candidate: Mapped["MergeTrainCandidate"] = relationship("MergeTrainCandidate", back_populates="speculative_results")
+
+
+class HumanReviewFeedback(Base):
+    """
+    Stage 3: Vector feedback buffer storing engineer approvals, rejections, and comment dismissals.
+    """
+    __tablename__ = "human_review_feedbacks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    repository_id: Mapped[str] = mapped_column(String, index=True)
+    pr_number: Mapped[int] = mapped_column(Integer, index=True)
+    analysis_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    event_type: Mapped[str] = mapped_column(String(50))  # approved, changes_requested, dismissed, edited
+    reviewer_handle: Mapped[str] = mapped_column(String(100))
+    finding_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rule_or_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Feedback calibration weight delta (+0.15 for confirmation, -0.20 for false-positive dismissal)
+    weight_delta: Mapped[float] = mapped_column(Float, default=0.0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

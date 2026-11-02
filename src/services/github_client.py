@@ -47,6 +47,89 @@ class GitHubClient:
                 headers["Authorization"] = f"Bearer {token}"
         return headers
 
+    async def get_user_info(self) -> dict[str, Any]:
+        """Fetches the authenticated user profile and scopes from GitHub."""
+        if not self.token and not self.app_id:
+            return {"authenticated": False, "login": "anonymous", "name": "Anonymous Dev", "repos_count": 0}
+        headers = await self.get_headers()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("https://api.github.com/user", headers=headers, timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "authenticated": True,
+                    "login": data.get("login"),
+                    "name": data.get("name") or data.get("login"),
+                    "avatar_url": data.get("avatar_url"),
+                    "html_url": data.get("html_url"),
+                    "public_repos": data.get("public_repos", 0),
+                    "total_private_repos": data.get("total_private_repos", 0),
+                }
+            return {"authenticated": False, "status_code": resp.status_code, "login": None}
+
+    async def list_user_repositories(self) -> list[dict[str, Any]]:
+        """Fetches all repositories available to the authenticated user."""
+        if not self.token and not self.app_id:
+            return []
+        headers = await self.get_headers()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.github.com/user/repos?per_page=100&sort=updated",
+                headers=headers,
+                timeout=12.0,
+            )
+            if resp.status_code != 200:
+                return []
+            repos = resp.json()
+            results = []
+            for r in repos:
+                results.append({
+                    "id": r.get("id"),
+                    "name": r.get("name"),
+                    "full_name": r.get("full_name"),
+                    "owner": r.get("owner", {}).get("login"),
+                    "private": r.get("private", False),
+                    "html_url": r.get("html_url"),
+                    "description": r.get("description"),
+                    "default_branch": r.get("default_branch", "main"),
+                    "updated_at": r.get("updated_at"),
+                    "stargazers_count": r.get("stargazers_count", 0),
+                    "open_issues_count": r.get("open_issues_count", 0),
+                    "clone_url": r.get("clone_url"),
+                })
+            return results
+
+    async def list_repo_pulls(self, repo_full_name: str, state: str = "open") -> list[dict[str, Any]]:
+        """Fetches pull requests for a given repository."""
+        if not self.token and not self.app_id:
+            return []
+        headers = await self.get_headers()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{repo_full_name}/pulls?state={state}",
+                headers=headers,
+                timeout=10.0,
+            )
+            if resp.status_code != 200:
+                return []
+            pulls = resp.json()
+            results = []
+            for p in pulls:
+                results.append({
+                    "number": p.get("number"),
+                    "title": p.get("title"),
+                    "state": p.get("state"),
+                    "html_url": p.get("html_url"),
+                    "user": p.get("user", {}).get("login"),
+                    "head_sha": p.get("head", {}).get("sha"),
+                    "head_ref": p.get("head", {}).get("ref"),
+                    "base_sha": p.get("base", {}).get("sha"),
+                    "base_ref": p.get("base", {}).get("ref"),
+                    "created_at": p.get("created_at"),
+                    "updated_at": p.get("updated_at"),
+                })
+            return results
+
     async def post_check_run(
         self,
         repo_owner_name: str,
