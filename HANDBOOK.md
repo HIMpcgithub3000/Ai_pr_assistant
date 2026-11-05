@@ -2,8 +2,8 @@
 > **The Definitive Architecture, Implementation & Operations Manual (Stages 1–3)**  
 > **System**: Distributed, Multi-Agent Pull Request Review, Sandbox Execution & Merge Queue Engine  
 > **Repository**: `https://github.com/HIMpcgithub3000/Ai_pr_assistant`  
-> **Production Deployment**: AWS EC2 Node `13.201.6.39` | Branch: `phase-2`  
-> **Status**: Stage 1, Stage 2 & Stage 3 (100% Implemented, Tested & Fully Working in Cloud Production)  
+> **Production Deployment**: AWS EC2 Node `13.127.211.174` | Branch: `phase-2`  
+> **Status**: Stage 1 & Stage 2 Verified in Cloud Production | Stage 3 Architecture & Design Integrated  
 
 ---
 
@@ -217,7 +217,7 @@ Stage 3 takes the autonomous assistant from reactive review to **predictive merg
 ## 8. Interactive Web Dashboard & Repositories Connection Hub
 
 The platform includes a clean, responsive React-based **Mission Control Dashboard** served directly on FastAPI port `8000`:
-* **Public URL**: `http://13.201.6.39:8000/` (or `GET /ui`)
+* **Public URL**: `http://13.127.211.174:8000/` (or `GET /ui`)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -251,7 +251,7 @@ The system was verified end-to-end with **zero manual commands** using real GitH
 2. **Conflict Branch Created**: Created branch `conflict/header-search-v2` with conflicting `Header.tsx` modifications and testable flaws (`eval` call and unresolved `TODO`).
 3. **Pull Request Opened**: Raised PR #2 targeting base branch `search` on `HIMpcgithub3000/Airbnb-clone`:
    * **URL**: [https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2](https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2)
-4. **Automated Webhook Delivery**: GitHub delivered the `pull_request.opened` event to `http://13.201.6.39:8000/webhook/github`.
+4. **Automated Webhook Delivery**: GitHub delivered the `pull_request.opened` event to `http://13.127.211.174:8000/webhook/github`.
 5. **Automated Processing**:
    * Priority extracted: **`P0` Critical Preemption**
    * SHA Contract Issued: `dfbab7dc-5cf4-4c66-a987-b16cabc7c72d`
@@ -264,8 +264,8 @@ The system was verified end-to-end with **zero manual commands** using real GitH
 
 ## 10. Cloud Infrastructure, Telemetry & Observability Playbook
 
-### Active Production Architecture (AWS EC2: `13.201.6.39`)
-- **Host Specs**: Ubuntu 24.04 LTS (x86_64), Docker Engine 27+, Python 3.12/3.14.
+### Active Production Architecture (AWS EC2: `13.127.211.174`)
+- **Host Specs**: Ubuntu 26.04 LTS (x86_64), Docker Engine 29+, Python 3.14.
 - **Security Group Inbound**: Port `22` (SSH), Port `8000` (FastAPI Webhooks & Mission Control Dashboard).
 
 ### Service Ports Matrix
@@ -282,11 +282,11 @@ The system was verified end-to-end with **zero manual commands** using real GitH
 ### Establishing Secure Administrative Tunnels
 To access Grafana and Redis Commander securely from your local workstation:
 ```bash
-ssh -i ~/Downloads/nexus_my.pem -N \
+ssh -i ~/.ssh/him_idt.pem -N \
   -L 3005:localhost:3000 \
   -L 8081:localhost:8081 \
   -L 9090:localhost:9090 \
-  ubuntu@13.201.6.39
+  ubuntu@13.127.211.174
 ```
 * **Grafana Dashboard URL**: `http://localhost:3005/d/pr-assistant-control-tower/ai-pr-assistant-e28094-mission-control`
 * **Credentials**: Username `admin`, Password `admin`.
@@ -295,43 +295,15 @@ ssh -i ~/Downloads/nexus_my.pem -N \
 
 ## 11. API Gateway & Event Schema Reference
 
-The platform exposes REST endpoints and webhook listeners on port `8000`.
-
-### 1. Webhook Ingress: `POST /webhook/github` & `POST /api/v1/webhooks/github`
-Handles GitHub App and repository webhook payloads with HMAC-SHA256 signature validation and delivery deduplication.
+### 1. Webhook Ingress: `POST /webhook/github`
+Handles GitHub App and repository webhook payloads with HMAC-SHA256 validation.
 - **Headers**:
-  - `X-GitHub-Event`: `pull_request`, `merge_group`, `pull_request_review`, `push`, `issue_comment`
-  - `X-GitHub-Delivery`: Unique UUID for idempotency filtering
+  - `X-GitHub-Event`: `pull_request`, `merge_group`, `push`
+  - `X-GitHub-Delivery`: Unique UUID for delivery deduplication
   - `X-Hub-Signature-256`: `sha256=<HMAC_HEX>`
 
-**Supported Webhook Events**:
-1. `pull_request` (`opened`, `synchronize`): Issues SHA contract, extracts priority (`P0`/`P1`/`P2`), and enqueues PR analysis.
-2. `merge_group` (`checks_requested`): Triggers speculative merge queue simulation and sandbox verification before merge landing.
-3. `pull_request_review` (`submitted`): Ingests engineer approvals (+0.15 boost) or dismissals (-0.25 penalty) into vector feedback buffer.
-4. `push` (to `main`/`master`): Triggers incremental `pgvector` re-indexing and stale chunk eviction for modified files.
-
----
-
-### 2. Live Health Check: `GET /health`
-```bash
-curl -s http://13.201.6.39:8000/health
-```
-```json
-{
-  "status": "healthy",
-  "env": "development",
-  "services": {
-    "postgres": "ready",
-    "redis": "ready",
-    "otel": "http://localhost:4317"
-  }
-}
-```
-
----
-
-### 3. GitHub Repositories Hub: `GET /api/v1/github/repos`
-Returns all GitHub account repositories enriched with connection and analysis run statistics:
+### 2. GitHub Repositories Hub: `GET /api/v1/github/repos`
+Returns all 39 account repositories enriched with AI PR Assistant connection status:
 ```json
 {
   "total_count": 39,
@@ -341,12 +313,12 @@ Returns all GitHub account repositories enriched with connection and analysis ru
       "name": "Airbnb-clone",
       "full_name": "HIMpcgithub3000/Airbnb-clone",
       "is_connected": true,
-      "total_runs": 14,
+      "total_runs": 12,
       "latest_run": {
         "id": "dfbab7dc-5cf4-4c66-a987-b16cabc7c72d",
         "status": "COMPLETED",
         "pr_number": 2,
-        "head_sha": "4679557b",
+        "head_sha": "119547f2",
         "priority": "P0"
       }
     }
@@ -354,10 +326,8 @@ Returns all GitHub account repositories enriched with connection and analysis ru
 }
 ```
 
----
-
-### 4. Live Queue Telemetry: `GET /api/v1/queues`
-Direct public endpoint for cluster queue depths and autoscaling metrics:
+### 3. Live Queue Inspection: `GET /api/v1/queues`
+Direct public endpoint for cluster telemetry and autoscaling monitors:
 ```json
 {
   "status": "active",
@@ -384,206 +354,40 @@ Direct public endpoint for cluster queue depths and autoscaling metrics:
 
 ---
 
-### 5. Stage 3 Speculative Merge Queue Endpoints
+## 12. Operational Runbook & Disaster Recovery Procedures
 
-#### Enqueue Candidate: `POST /api/v1/merge-queue/enqueue`
-Enqueues a pull request into the speculative merge train:
+### 1. Managing Systemd User Services on EC2
+Both the API gateway and the worker are managed via persistent `systemd` user units with lingering enabled:
 ```bash
-curl -s -X POST http://13.201.6.39:8000/api/v1/merge-queue/enqueue \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repository_id": "HIMpcgithub3000/Airbnb-clone",
-    "pr_number": 2,
-    "head_sha": "4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c",
-    "target_branch": "main"
-  }'
-```
-```json
-{
-  "id": "0f3f258b-845d-4714-bd1a-6274c859b7e5",
-  "repository_id": "HIMpcgithub3000/Airbnb-clone",
-  "pr_number": 2,
-  "head_sha": "4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c",
-  "target_branch": "main",
-  "queue_position": 0,
-  "status": "ENQUEUED"
-}
-```
+# Connect to host
+ssh -i ~/.ssh/him_idt.pem ubuntu@13.127.211.174
 
-#### Inspect Merge Train: `GET /api/v1/merge-queue/{owner}/{repo}`
-```bash
-curl -s http://13.201.6.39:8000/api/v1/merge-queue/HIMpcgithub3000/Airbnb-clone
-```
-
-#### Simulate Speculative Merge: `POST /api/v1/merge-queue/simulate`
-Executes pre-warmed sandbox testing against the combined speculative SHA:
-```bash
-curl -s -X POST http://13.201.6.39:8000/api/v1/merge-queue/simulate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "candidate_id": "0f3f258b-845d-4714-bd1a-6274c859b7e5",
-    "base_target_sha": "main_head_sha",
-    "mock_conflict": false
-  }'
-```
-```json
-{
-  "candidate_id": "0f3f258b-845d-4714-bd1a-6274c859b7e5",
-  "status": "VERIFIED",
-  "mergeable": true,
-  "speculative_sha": "729f1e0ed9985ac00d4fe005483f835a308af6e1",
-  "preceding_shas": [],
-  "tests_passed": true,
-  "exit_code": 0
-}
-```
-
----
-
-### 6. Stage 3 Closed-Loop Human Review Feedback Endpoints
-
-#### Record Human Feedback: `POST /api/v1/feedback`
-Records engineer validation or dismissal, updating vector calibration:
-```bash
-curl -s -X POST http://13.201.6.39:8000/api/v1/feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repository_id": "HIMpcgithub3000/Airbnb-clone",
-    "pr_number": 2,
-    "reviewer_handle": "HIMpcgithub3000",
-    "event_type": "approved",
-    "finding_category": "SECURITY",
-    "rule_or_title": "SQL_INJECTION_RISK",
-    "feedback_text": "Confirmed issue resolved"
-  }'
-```
-```json
-{
-  "id": "801fef93-b9cc-4c5b-8d43-2144ed5c5c42",
-  "repository_id": "HIMpcgithub3000/Airbnb-clone",
-  "pr_number": 2,
-  "event_type": "approved",
-  "weight_delta": 0.15,
-  "net_historical_calibration": 0.15,
-  "status": "RECORDED"
-}
-```
-
-#### List Recent Feedback: `GET /api/v1/feedback/{owner}/{repo}`
-```bash
-curl -s http://13.201.6.39:8000/api/v1/feedback/HIMpcgithub3000/Airbnb-clone
-```
-
----
-
-### 7. Stage 3 Incremental Re-indexing Endpoints
-
-#### Trigger Re-indexing: `POST /api/v1/reindex`
-Evicts stale embeddings and computes fresh vectors on merged commit:
-```bash
-curl -s -X POST http://13.201.6.39:8000/api/v1/reindex \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repository_id": "HIMpcgithub3000/Airbnb-clone",
-    "commit_sha": "4679557b1d7e015f14fdabcbbc0d1c3e50b6e53c",
-    "changed_files": ["src/Header.tsx", "src/auth.ts"]
-  }'
-```
-
-#### Get Re-indexing Stats: `GET /api/v1/reindex/{owner}/{repo}`
-```bash
-curl -s http://13.201.6.39:8000/api/v1/reindex/HIMpcgithub3000/Airbnb-clone
-```
-
----
-
-## 12. Operational Runbook & How to Run
-
-### Part A: Running in Cloud Production (AWS EC2: `13.201.6.39`)
-
-The production deployment runs 24/7 on AWS EC2 under persistent `systemd` user units with Docker container backing services.
-
-#### 1. Managing Systemd Daemons
-```bash
-# Connect to production host
-ssh -i ~/Downloads/nexus_my.pem ubuntu@13.201.6.39
-
-# Check service statuses
+# Inspect service statuses
 systemctl --user status pr-api --no-pager
 systemctl --user status pr-worker --no-pager
 
-# Restart services after git pull
-systemctl --user restart pr-api pr-worker
+# Restart services
+systemctl --user restart pr-api
+systemctl --user restart pr-worker
 
-# Stream live worker logs
+# Inspect live service logs
+journalctl --user-unit=pr-api -f
 journalctl --user-unit=pr-worker -f
 ```
 
-#### 2. Running Automated Tests on EC2
+### 2. Executing Automated Test Suite
 ```bash
 cd /home/ubuntu/devops_idt_project
-source .venv/bin/activate
-pytest -v
+.venv/bin/pytest -v
 ```
-*Current Status: 14 passed in 6.62s (100% pass rate across Stage 1, Stage 2, and Stage 3).*
+*Current Status: 9 passed in 5.28s (100% pass rate).*
 
----
-
-### Part B: Running Locally on macOS / Linux
-
-To run and develop the full stack locally:
-
-#### Step 1: Start Supporting Infrastructure via Docker
-The project requires PostgreSQL 16 (with `pgvector`) and Redis 7:
-```bash
-cd /Users/himanshusharma/devops_idt_project
-docker compose up -d postgres redis
-```
-*Port mappings: PostgreSQL on `localhost:5433` (host), Redis on `localhost:6379`.*
-
-#### Step 2: Initialize Virtualenv & Install Dependencies
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-#### Step 3: Run the Complete Test Suite
-```bash
-pytest -v
-```
-All 14 unit and integration tests validate the full pipeline end-to-end.
-
-#### Step 4: Launch the FastAPI Gateway & UI
-```bash
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Open [http://localhost:8000/](http://localhost:8000/) in your browser to access the 5-tab Mission Control UI.
-
-#### Step 5: Launch the Distributed Worker Daemon
-In a separate terminal:
-```bash
-source .venv/bin/activate
-python -m src.worker.main
-```
-The worker will register with Redis and begin polling `pr_analysis_p0`, `pr_analysis_p1`, `pr_analysis_p2`, and `pr_analysis_p3`.
-
-#### Step 6: Shutting Down Local Services
-When finished working locally:
-```bash
-# Stop running uvicorn/worker processes (Ctrl+C)
-# Stop Docker containers
-docker compose down
-```
-
----
-
-### Part C: Handling Upstream LLM Throttling & Fault Tolerance
-- **Automatic Circuit Breaker**: The `AgentCircuitBreaker` trips to `OPEN` after 5 consecutive failures.
+### 3. Handling Upstream LLM Throttling (HTTP 429)
+- **Automatic Behavior**: The `AgentCircuitBreaker` trips to `OPEN` after 5 consecutive failures.
 - **Fallback**: The worker immediately publishes a degraded report based on verified Ruff/Bandit static findings and proceeds without blocking PR merges.
 - **Recovery**: Circuit probes `HALF-OPEN` after 60s and automatically resets to `CLOSED` upon successful response.
 
-### Part D: Resolving Stale PR Drift Alerts
+### 4. Resolving Stale PR Drift Alerts
 - When a developer pushes new code during analysis, the worker logs `is_fresh=False`.
 - The `SalvageGateService` automatically stores unchanged file ASTs into PostgreSQL.
 - The new commit triggers a fresh webhook that pulls salvaged AST findings, finishing analysis in under 5 seconds.
@@ -623,4 +427,4 @@ This project demonstrates flagship distributed systems engineering competencies:
 
 ---
 
-*Verified in Cloud Production on AWS EC2 (`13.201.6.39`) | Maintained by Himanshu Sharma*
+*Verified in Cloud Production on AWS EC2 (`13.127.211.174`) | Maintained by Himanshu Sharma*

@@ -1,6 +1,6 @@
 # 📑 AI-Powered Autonomous PR Assistant — Stage 2 Complete System Specification
 > **A Production-Grade, Zero-Trust Code Review, Sandbox Verification & Priority Queuing Engine**  
-> **Target Environment**: AWS EC2 (`13.201.6.39`), Ubuntu 26.04 LTS, Docker Engine, Python 3.14  
+> **Target Environment**: AWS EC2 (`13.127.211.174`), Ubuntu 26.04 LTS, Docker Engine, Python 3.14  
 > **Source Repository**: `https://github.com/HIMpcgithub3000/Ai_pr_assistant` (Branch: `phase-2`)  
 > **Current Status**: **Stage 1 (100% Verified) | Stage 2 (100% Verified) | Stage 3 (100% Verified)**  
 
@@ -185,7 +185,7 @@ To scale this platform for enterprise engineering organizations (e.g., Stripe, U
 
 ## 🛠️ Infrastructure, Port Matrix & Operational Runbook
 
-### Service Ports Matrix on AWS EC2 (`13.201.6.39`)
+### Service Ports Matrix on AWS EC2 (`13.127.211.174`)
 | Service | Port | Access Mode | Purpose |
 |:---|:---:|:---:|:---|
 | **FastAPI & React Mission Control** | `8000` | **Public / Direct** | Webhook ingress, REST API, and Clean React UI |
@@ -198,10 +198,10 @@ To scale this platform for enterprise engineering organizations (e.g., Stripe, U
 ### Administrative SSH Access & Port Forwarding
 ```bash
 # Connect directly via SSH:
-ssh -i ~/Downloads/nexus_my.pem ubuntu@13.201.6.39
+ssh -i ~/.ssh/him_idt.pem ubuntu@13.127.211.174
 
 # Open secure tunnel for Grafana & Redis Commander:
-ssh -i ~/Downloads/nexus_my.pem -L 3005:localhost:3000 -L 8081:localhost:8081 -L 9090:localhost:9090 ubuntu@13.201.6.39
+ssh -i ~/.ssh/him_idt.pem -L 3005:localhost:3000 -L 8081:localhost:8081 -L 9090:localhost:9090 ubuntu@13.127.211.174
 ```
 
 ### Systemd Daemon Management

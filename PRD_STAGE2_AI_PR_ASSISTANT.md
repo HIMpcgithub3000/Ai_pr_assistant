@@ -3,7 +3,7 @@
 **Product Name**: Autonomous AI Pull Request Assistant & Verification Engine  
 **Release Version**: Stage 2 (Distributed Scaling, Deterministic Evidence & Resilience)  
 **Document Status**: APPROVED & DEPLOYED  
-**Target Environment**: AWS EC2 (`13.201.6.39`), PostgreSQL 16 (Port 5433), Redis 7 (Port 6379), OpenTelemetry  
+**Target Environment**: AWS EC2 (`13.127.211.174`), PostgreSQL 16 (Port 5433), Redis 7 (Port 6379), OpenTelemetry  
 **Document Author**: Senior Infrastructure & AI DevOps Engineering Team  
 
 ---
@@ -141,11 +141,11 @@ Stage 2 introduces four core distributed infrastructure pillars designed for hig
 
 ## 4. Production Verification Evidence
 
-The Stage 2 system has been validated live on the production AWS EC2 instance (`13.201.6.39`) against a real pull request: **[HIMpcgithub3000/Airbnb-clone PR #2](https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2)**.
+The Stage 2 system has been validated live on the production AWS EC2 instance (`13.127.211.174`) against a real pull request: **[HIMpcgithub3000/Airbnb-clone PR #2](https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2)**.
 
 ### Test Execution Metrics
 * **Trigger Event**: Pushed branch `conflict/header-search-v2` from a local Mac workstation and opened PR #2 on GitHub.
-* **Automated Webhook Ingestion**: Webhook received at `http://13.201.6.39:8000/webhook/github` within **420ms**.
+* **Automated Webhook Ingestion**: Webhook received at `http://13.127.211.174:8000/webhook/github` within **420ms**.
 * **Preemption & Routing**: Priority extracted as `P0` from title `[P0 Conflict]`, issued immutable contract `dfbab7dc-5cf4-4c66-a987-b16cabc7c72d`.
 * **Execution Latency**: 4.8 seconds total end-to-end turnaround.
 * **Published Findings**:
@@ -246,7 +246,7 @@ To evaluate production success, the platform is benchmarked against the followin
 ## 7. Deliverables & Documentation Index
 
 * **Source Code Repository**: [`HIMpcgithub3000/Ai_pr_assistant`](https://github.com/HIMpcgithub3000/Ai_pr_assistant) (Branch: `phase-2`)
-* **Mission Control UI**: Served live on AWS EC2 at `http://13.201.6.39:8000/`
+* **Mission Control UI**: Served live on AWS EC2 at `http://13.127.211.174:8000/`
 * **Grafana Monitoring Dashboard**: Tunneled on `http://localhost:3005/d/pr-assistant-control-tower/ai-pr-assistant-e28094-mission-control`
 * **Technical Handbook**: [`HANDBOOK.md`](file:///Users/himanshusharma/devops_idt_project/HANDBOOK.md)
 * **System Specification**: [`SYSTEM_SPECIFICATION.md`](file:///Users/himanshusharma/devops_idt_project/SYSTEM_SPECIFICATION.md)
