@@ -619,7 +619,7 @@ def get_dashboard_html() -> str:
                     <div className="flex items-center space-x-2 text-slate-700">
                       <span className="font-bold text-slate-900">Webhook Contract URL:</span>
                       <code className="font-mono bg-white px-2.5 py-1 rounded-md border border-slate-200 text-blue-700 select-all">
-                        http://13.127.211.174:8000/webhook/github
+                        http://13.232.88.232:8000/webhook/github
                       </code>
                     </div>
                     <div className="flex items-center space-x-2 text-slate-500">
@@ -1796,7 +1796,7 @@ def get_dashboard_html() -> str:
           <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
             <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
               <span>AI PR Assistant Mission Control • Stage 2 Autonomous Infrastructure</span>
-              <span className="font-mono text-slate-400">EC2 Node: 13.127.211.174 • Redis Broker Active</span>
+              <span className="font-mono text-slate-400">EC2 Node: 13.232.88.232 • Redis Broker Active</span>
             </div>
           </footer>
         </div>

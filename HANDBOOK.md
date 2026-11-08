@@ -2,7 +2,7 @@
 > **The Definitive Architecture, Implementation & Operations Manual (Stages 1–3)**  
 > **System**: Distributed, Multi-Agent Pull Request Review, Sandbox Execution & Merge Queue Engine  
 > **Repository**: `https://github.com/HIMpcgithub3000/Ai_pr_assistant`  
-> **Production Deployment**: AWS EC2 Node `13.127.211.174` | Branch: `phase-2`  
+> **Production Deployment**: AWS EC2 Node `13.232.88.232` | Branch: `phase-2`  
 > **Status**: Stage 1 & Stage 2 Verified in Cloud Production | Stage 3 Architecture & Design Integrated  
 
 ---
@@ -217,7 +217,7 @@ Stage 3 takes the autonomous assistant from reactive review to **predictive merg
 ## 8. Interactive Web Dashboard & Repositories Connection Hub
 
 The platform includes a clean, responsive React-based **Mission Control Dashboard** served directly on FastAPI port `8000`:
-* **Public URL**: `http://13.127.211.174:8000/` (or `GET /ui`)
+* **Public URL**: `http://13.232.88.232:8000/` (or `GET /ui`)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -251,7 +251,7 @@ The system was verified end-to-end with **zero manual commands** using real GitH
 2. **Conflict Branch Created**: Created branch `conflict/header-search-v2` with conflicting `Header.tsx` modifications and testable flaws (`eval` call and unresolved `TODO`).
 3. **Pull Request Opened**: Raised PR #2 targeting base branch `search` on `HIMpcgithub3000/Airbnb-clone`:
    * **URL**: [https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2](https://github.com/HIMpcgithub3000/Airbnb-clone/pull/2)
-4. **Automated Webhook Delivery**: GitHub delivered the `pull_request.opened` event to `http://13.127.211.174:8000/webhook/github`.
+4. **Automated Webhook Delivery**: GitHub delivered the `pull_request.opened` event to `http://13.232.88.232:8000/webhook/github`.
 5. **Automated Processing**:
    * Priority extracted: **`P0` Critical Preemption**
    * SHA Contract Issued: `dfbab7dc-5cf4-4c66-a987-b16cabc7c72d`
@@ -264,7 +264,7 @@ The system was verified end-to-end with **zero manual commands** using real GitH
 
 ## 10. Cloud Infrastructure, Telemetry & Observability Playbook
 
-### Active Production Architecture (AWS EC2: `13.127.211.174`)
+### Active Production Architecture (AWS EC2: `13.232.88.232`)
 - **Host Specs**: Ubuntu 26.04 LTS (x86_64), Docker Engine 29+, Python 3.14.
 - **Security Group Inbound**: Port `22` (SSH), Port `8000` (FastAPI Webhooks & Mission Control Dashboard).
 
@@ -286,7 +286,7 @@ ssh -i ~/.ssh/him_idt.pem -N \
   -L 3005:localhost:3000 \
   -L 8081:localhost:8081 \
   -L 9090:localhost:9090 \
-  ubuntu@13.127.211.174
+  ubuntu@13.232.88.232
 ```
 * **Grafana Dashboard URL**: `http://localhost:3005/d/pr-assistant-control-tower/ai-pr-assistant-e28094-mission-control`
 * **Credentials**: Username `admin`, Password `admin`.
@@ -360,7 +360,7 @@ Direct public endpoint for cluster telemetry and autoscaling monitors:
 Both the API gateway and the worker are managed via persistent `systemd` user units with lingering enabled:
 ```bash
 # Connect to host
-ssh -i ~/.ssh/him_idt.pem ubuntu@13.127.211.174
+ssh -i ~/.ssh/him_idt.pem ubuntu@13.232.88.232
 
 # Inspect service statuses
 systemctl --user status pr-api --no-pager
@@ -427,4 +427,4 @@ This project demonstrates flagship distributed systems engineering competencies:
 
 ---
 
-*Verified in Cloud Production on AWS EC2 (`13.127.211.174`) | Maintained by Himanshu Sharma*
+*Verified in Cloud Production on AWS EC2 (`13.232.88.232`) | Maintained by Himanshu Sharma*
